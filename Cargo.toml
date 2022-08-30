@@ -1,0 +1,9 @@
+[package]
+name = "lang"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+regex = "1.6.0"
+chrono = "0.4.22"
+colored = "2.0.0"
