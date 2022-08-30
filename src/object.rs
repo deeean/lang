@@ -9,7 +9,7 @@ pub enum Object {
   Number(f64),
   String(String),
   Boolean(bool),
-  Native(i32, String, fn(Vec<Object>) -> Object),
+  Builtin(i32, String, fn(Vec<Object>) -> Object),
 }
 
 impl fmt::Display for Object {
@@ -22,7 +22,7 @@ impl fmt::Display for Object {
       Object::Number(n) => write!(f, "{}", n),
       Object::String(s) => write!(f, "{}", s),
       Object::Boolean(b) => write!(f, "{}", b),
-      Object::Native(_, name, _) => write!(f, "{}() {{ [native code] }}", name),
+      Object::Builtin(_, name, _) => write!(f, "{}() {{ [native code] }}", name),
     }
   }
 }

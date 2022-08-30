@@ -3,45 +3,59 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use crate::object::Object;
 
+type Objects = HashMap<String, Object>;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Env {
-  pub store: HashMap<String, Object>,
-  pub outer: Option<Rc<RefCell<Env>>>,
+  pub objects: Objects,
+  pub parent: Option<Rc<RefCell<Env>>>,
 }
 
 impl Env {
   pub fn new() -> Self {
     Self {
-      store: HashMap::new(),
-      outer: None,
+      objects: HashMap::new(),
+      parent: None,
     }
   }
 
-  pub fn from(store: HashMap<String, Object>) -> Self {
+  pub fn from(objects: Objects) -> Self {
     Self {
-      store,
-      outer: None,
+      objects,
+      parent: None,
     }
   }
 
-  pub fn with_outer(outer: Rc<RefCell<Env>>) -> Self {
+  pub fn new_with_parent(parent: Rc<RefCell<Env>>) -> Self {
     Self {
-      store: HashMap::new(),
-      outer: Some(outer),
+      objects: HashMap::new(),
+      parent: Some(parent),
     }
   }
 
   pub fn get(&self, name: String) -> Option<Object> {
-    match self.store.get(&name) {
-      Some(value) => Some(value.clone()),
-      None => match self.outer {
-        Some(ref outer) => outer.borrow_mut().get(name),
-        None => None,
-      },
+    if let Some(object) = self.objects.get(&name) {
+      return Some(object.clone());
     }
+
+    if let Some(ref parent) = self.parent {
+      return parent.borrow_mut().get(name);
+    }
+
+    None
   }
 
   pub fn set(&mut self, name: String, value: &Object) {
-    self.store.insert(name, value.clone());
+    self.objects.insert(name, value.clone());
+  }
+
+  pub fn assign(&mut self, name: String, value: &Object) {
+    if let Some(_) = self.objects.get(&name) {
+      self.objects.insert(name, value.clone());
+    } else if let Some(ref parent) = self.parent {
+      parent.borrow_mut().assign(name, value);
+    } else {
+      panic!("Undefined variable '{}'", name);
+    }
   }
 }

@@ -1,6 +1,6 @@
 use std::fmt;
 use std::num::ParseFloatError;
-use crate::ast::{AssignOperator, BinaryOperator, Expression, Statement, UnaryOperator};
+use crate::ast::{AssignOperator, BinaryOperator, Expression, Program, Statement, UnaryOperator};
 use crate::token::{TokenKind, Token};
 
 #[derive(Debug, Clone)]
@@ -84,6 +84,16 @@ impl Parser {
     token
   }
 
+  fn expect_token_kind(&mut self, kind: TokenKind) -> bool {
+    if self.peek().kind == kind {
+      self.advance();
+      true
+    } else {
+      self.error_token_kind(kind);
+      false
+    }
+  }
+
   fn expect_next_token_kind(&mut self, kind: TokenKind) -> bool {
     if self.next_peek().kind == kind {
       self.advance();
@@ -92,6 +102,13 @@ impl Parser {
       self.error_next_token_kind(kind);
       false
     }
+  }
+
+  fn error_token_kind(&mut self, kind: TokenKind) {
+    self.errors.push(ParseError::new(
+      ParseErrorKind::UnexpectedToken,
+      format!("Expected token kind to be {:?}, got {:?} instead", kind, self.peek().kind),
+    ));
   }
 
   fn error_next_token_kind(&mut self, kind: TokenKind) {
@@ -302,10 +319,46 @@ impl Parser {
     Some(Expression::Call(Box::new(callee), arguments))
   }
 
+  fn parse_assign_expression(&mut self) -> Option<Expression> {
+    let name = match self.parse_identifier() {
+      Some(name) => name,
+      None => return None,
+    };
+
+    self.advance();
+
+    let assign_operator = match self.peek().kind {
+      TokenKind::Equal => AssignOperator::Assign,
+      TokenKind::PlusEqual => AssignOperator::AddAssign,
+      TokenKind::MinusEqual => AssignOperator::SubtractAssign,
+      TokenKind::StarEqual => AssignOperator::MultiplyAssign,
+      TokenKind::SlashEqual => AssignOperator::DivideAssign,
+      _ => return None,
+    };
+
+    self.advance();
+
+    let right = match self.parse_expression(Precedence::None) {
+      Some(expr) => expr,
+      None => return None,
+    };
+
+    Some(Expression::Assign(name, assign_operator, Box::new(right)))
+  }
+
   fn parse_expression(&mut self, precedence: Precedence) -> Option<Expression> {
     let mut left = match self.peek().kind {
       TokenKind::Null => self.parse_null_expression(),
-      TokenKind::Identifier => self.parse_identifier_expression(),
+      TokenKind::Identifier => {
+        match self.next_peek().kind {
+          TokenKind::Equal |
+          TokenKind::PlusEqual |
+          TokenKind::MinusEqual |
+          TokenKind::SlashEqual |
+          TokenKind::StarEqual => self.parse_assign_expression(),
+          _ => self.parse_identifier_expression(),
+        }
+      },
       TokenKind::Number => self.parse_number_expression(),
       TokenKind::String => self.parse_string_expression(),
       TokenKind::Boolean => self.parse_boolean_expression(),
@@ -353,53 +406,73 @@ impl Parser {
     }
   }
 
-  fn parse_assignment_statement(&mut self) -> Option<Statement> {
-    let name = match self.parse_identifier() {
-      Some(name) => name,
-      None => return None,
-    };
+  fn parse_block_statements(&mut self) -> Option<Program> {
+    if !self.expect_token_kind(TokenKind::LeftBrace) {
+      return None;
+    }
+
+    self.parse_statements(TokenKind::RightBrace)
+  }
+
+  fn parse_statements(&mut self, end_token_kind: TokenKind) -> Option<Program> {
+    let mut statements = Vec::new();
+
+    while self.peek().kind != TokenKind::Eof {
+      match self.parse_statement() {
+        Some(stmt) => {
+          statements.push(stmt);
+        },
+        None => {}
+      }
+
+      if self.peek().kind == end_token_kind {
+        break;
+      }
+
+      self.advance();
+    }
+
+    Some(statements)
+  }
+
+  fn parse_for_statement(&mut self) -> Option<Statement> {
+    if !self.expect_next_token_kind(TokenKind::LeftParen) {
+      return None;
+    }
 
     self.advance();
 
-    let assign_operator = match self.peek().kind {
-      TokenKind::Equal => AssignOperator::Assign,
-      TokenKind::PlusEqual => AssignOperator::AddAssign,
-      TokenKind::MinusEqual => AssignOperator::SubtractAssign,
-      TokenKind::StarEqual => AssignOperator::MultiplyAssign,
-      TokenKind::SlashEqual => AssignOperator::DivideAssign,
-      _ => return None,
-    };
+    let initializer = self.parse_statements(TokenKind::Semicolon);
 
     self.advance();
 
-    let right = match self.parse_expression(Precedence::None) {
-      Some(expr) => expr,
+    let condition = self.parse_expression(Precedence::None);
+
+    self.advance();
+
+    let finalize = self.parse_statements(TokenKind::RightParen);
+
+    if !self.expect_token_kind(TokenKind::RightParen) {
+      return None;
+    }
+
+    let block_statements = match self.parse_block_statements() {
+      Some(statements) => statements,
       None => return None,
     };
 
-    Some(Statement::Assign(name, assign_operator, right))
+    Some(Statement::For(initializer, condition, finalize, block_statements))
   }
 
   fn parse_statement(&mut self) -> Option<Statement> {
     match self.peek().kind {
       TokenKind::Let => self.parse_let_statement(),
-      TokenKind::Identifier => {
-        match self.next_peek().kind {
-          TokenKind::Equal |
-          TokenKind::PlusEqual |
-          TokenKind::MinusEqual |
-          TokenKind::StarEqual |
-          TokenKind::SlashEqual => {
-            self.parse_assignment_statement()
-          },
-          _ => self.parse_expression_statement(),
-        }
-      }
+      TokenKind::For => self.parse_for_statement(),
       _ => self.parse_expression_statement(),
     }
   }
 
-  pub fn parse(&mut self) -> Vec<Statement> {
+  pub fn parse(&mut self) -> Program {
     let mut statements = Vec::new();
     while self.peek().kind != TokenKind::Eof {
       match self.parse_statement() {
@@ -448,61 +521,6 @@ mod tests {
 
   #[test]
   fn parse() {
-    let tests = vec![
-      (
-        "a + b + c",
-        Statement::Expression(
-          Expression::Binary(
-            Box::new(Expression::Binary(
-              Box::new(Expression::Identifier("a".to_string())),
-              BinaryOperator::Add,
-              Box::new(Expression::Identifier("b".to_string())),
-            )),
-            BinaryOperator::Add,
-            Box::new(Expression::Identifier("c".to_string())),
-          ),
-        ),
-      ),
-      (
-        "-a",
-        Statement::Expression(
-          Expression::Unary(
-            UnaryOperator::Negative,
-            Box::new(Expression::Identifier("a".to_string())),
-          ),
-        ),
-      ),
-      (
-        "+a",
-        Statement::Expression(
-          Expression::Unary(
-            UnaryOperator::Positive,
-            Box::new(Expression::Identifier("a".to_string())),
-          ),
-        ),
-      ),
-      (
-        "(10 + 20) / 30",
-        Statement::Expression(
-          Expression::Binary(
-            Box::new(
-              Expression::Binary(
-                Box::new(Expression::Number(10.0)),
-                BinaryOperator::Add,
-                Box::new(Expression::Number(20.0)),
-              ),
-            ),
-            BinaryOperator::Divide,
-            Box::new(Expression::Number(30.0)),
-          )
-        ),
-      )
-    ];
 
-    for (input, expect) in tests {
-      let mut program = Parser::new(Lexer::new(input).lex()).parse();
-
-      assert_eq!(vec![expect], program);
-    }
   }
 }

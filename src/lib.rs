@@ -5,4 +5,4 @@ pub mod parser;
 mod object;
 pub mod evaluator;
 mod env;
-mod native;
+mod builtin;
