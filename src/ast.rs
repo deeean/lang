@@ -38,12 +38,22 @@ pub enum Expression {
 
   Unary(UnaryOperator, Box<Expression>),
   Binary(Box<Expression>, BinaryOperator, Box<Expression>),
+
+  Assign(String, AssignOperator, Box<Expression>),
+
   Call(Box<Expression>, Vec<Expression>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
   Let(String, Expression),
-  Assign(String, AssignOperator, Expression),
+  For(
+    Option<Program>,
+    Option<Expression>,
+    Option<Program>,
+    Program,
+  ),
   Expression(Expression),
 }
+
+pub type Program = Vec<Statement>;

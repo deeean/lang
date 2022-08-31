@@ -37,6 +37,7 @@ pub enum TokenKind {
   Break,
   Continue,
 
+  Comment,
   Illegal,
   Eof,
 }

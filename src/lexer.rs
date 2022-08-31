@@ -66,6 +66,8 @@ impl <'a> Lexer<'a> {
     let kind = match self.peek() {
       b'(' => TokenKind::LeftParen,
       b')' => TokenKind::RightParen,
+      b'{' => TokenKind::LeftBrace,
+      b'}' => TokenKind::RightBrace,
       b';' => TokenKind::Semicolon,
       b',' => TokenKind::Comma,
       b'!' => {
@@ -133,6 +135,9 @@ impl <'a> Lexer<'a> {
       },
       b'/' => {
         match self.next_peek() {
+          b'/' => {
+            return self.comment();
+          }
           b'=' => {
             self.advance();
             TokenKind::SlashEqual
@@ -218,6 +223,24 @@ impl <'a> Lexer<'a> {
         }
       }
     }
+  }
+
+  fn comment(&mut self) -> Token {
+    let start = self.curr;
+
+    loop {
+      match self.peek() {
+        b'\n' | 0 => {
+          self.advance();
+          break;
+        }
+        _ => {
+          self.advance();
+        }
+      }
+    };
+
+    Token::new(TokenKind::Comment, self.input[start..self.curr].to_owned(), Span(start, self.curr))
   }
 
   fn identifier(&mut self) -> Token {
