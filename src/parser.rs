@@ -407,17 +407,27 @@ impl Parser {
   }
 
   fn parse_block_statements(&mut self) -> Option<Program> {
+    println!("{:?}", self.peek());
+
     if !self.expect_token_kind(TokenKind::LeftBrace) {
       return None;
     }
 
-    self.parse_statements(TokenKind::RightBrace)
+    let program = self.parse_statements(TokenKind::RightBrace);
+
+    println!("{:?}", self.peek());
+
+    program
   }
 
   fn parse_statements(&mut self, end_token_kind: TokenKind) -> Option<Program> {
     let mut statements = Vec::new();
 
-    while self.peek().kind != TokenKind::Eof {
+    loop {
+      if self.peek().kind == TokenKind::Eof {
+        break;
+      }
+
       match self.parse_statement() {
         Some(stmt) => {
           statements.push(stmt);
@@ -432,12 +442,19 @@ impl Parser {
       self.advance();
     }
 
+    if statements.is_empty() {
+      return None;
+    }
+
     Some(statements)
   }
 
   fn parse_for_statement(&mut self) -> Option<Statement> {
-    if !self.expect_next_token_kind(TokenKind::LeftParen) {
-      return None;
+    match self.next_peek().kind {
+      TokenKind::LeftParen => {
+        self.advance();
+      },
+      _ => return None,
     }
 
     self.advance();
@@ -452,9 +469,7 @@ impl Parser {
 
     let finalize = self.parse_statements(TokenKind::RightParen);
 
-    if !self.expect_token_kind(TokenKind::RightParen) {
-      return None;
-    }
+    self.advance();
 
     let block_statements = match self.parse_block_statements() {
       Some(statements) => statements,
@@ -466,6 +481,10 @@ impl Parser {
 
   fn parse_statement(&mut self) -> Option<Statement> {
     match self.peek().kind {
+      TokenKind::RightBrace => {
+        self.advance();
+        self.parse_expression_statement()
+      },
       TokenKind::Let => self.parse_let_statement(),
       TokenKind::For => self.parse_for_statement(),
       _ => self.parse_expression_statement(),

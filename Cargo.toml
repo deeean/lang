@@ -1,9 +1,19 @@
 [package]
-name = "lang"
+name = "ape"
+description = ""
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 regex = "1.6.0"
+clap = "3.2.19"
 chrono = "0.4.22"
-colored = "2.0.0"
+
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+opt-level = 3
+
+[[bin]]
+name = "ape"

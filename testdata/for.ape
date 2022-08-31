@@ -1,0 +1,20 @@
+for (;;) {
+  let sum = 0;
+  let startTime = time();
+  let iteration = 20;
+
+  for (let i = 0; i < iteration; i += 1) {
+    for (let j = 0; j < iteration; j += 1) {
+      for (let k = 0; k < iteration; k += 1) {
+        sum += 1;
+      }
+
+      println("j");
+    }
+
+    println("i");
+  }
+
+  println(sum);
+  println(time() - startTime + "ms");
+}

@@ -20,7 +20,7 @@ impl Evaluator {
     Object::Error(msg)
   }
 
-  fn is_error(obj: &Object) -> bool {
+  pub fn is_error(obj: &Object) -> bool {
     match obj {
       Object::Error(_) => true,
       _ => false,
@@ -182,12 +182,6 @@ impl Evaluator {
     }
 
     loop {
-      self.eval_program(statements.clone());
-
-      if let Some(finalize) = finalize.clone() {
-        self.eval_program(finalize);
-      }
-
       if let Some(condition) = condition.clone() {
         let condition = match self.eval_expression(condition) {
           Some(condition) => condition,
@@ -197,6 +191,12 @@ impl Evaluator {
         if condition == Object::Boolean(false) {
           break;
         }
+      }
+
+      self.eval_program(statements.clone());
+
+      if let Some(finalize) = finalize.clone() {
+        self.eval_program(finalize);
       }
     }
 
@@ -212,10 +212,6 @@ impl Evaluator {
         None
       },
       Statement::Let(name, expression) => {
-        if let Some(_) = self.env.borrow_mut().get(name.clone()) {
-          return Some(Self::error(format!("Identifier '{}' has already been declared", name)));
-        }
-
         let value = match self.eval_expression(expression) {
           Some(value) => value,
           None => return None,
@@ -229,7 +225,6 @@ impl Evaluator {
         }
       },
       Statement::Expression(expr) => self.eval_expression(expr),
-      _ => None,
     }
   }
 
@@ -283,7 +278,6 @@ mod tests {
   fn eval(input: &str) -> Option<Object> {
     let mut evaluator = Evaluator::new(Rc::new(RefCell::new(Env::from(builtin()))));
     let tokens = Lexer::new(input).lex();
-
     let program = Parser::new(tokens).parse();
     println!("{:#?}", program);
 
