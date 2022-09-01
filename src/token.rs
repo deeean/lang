@@ -1,5 +1,8 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenKind {
+  Illegal,
+  Eof,
+
   LeftParen,
   RightParen,
   LeftBrace,
@@ -25,6 +28,8 @@ pub enum TokenKind {
   StarEqual,
   Slash,
   SlashEqual,
+  Percent,
+  PercentEqual,
 
   Identifier,
   String,
@@ -38,8 +43,6 @@ pub enum TokenKind {
   Continue,
 
   Comment,
-  Illegal,
-  Eof,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

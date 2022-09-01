@@ -1,31 +1,35 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum UnaryOperator {
+pub enum UnaryOp {
   Positive,
   Negative,
   Not,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum BinaryOperator {
+pub enum BinaryOp {
   Add,
   Subtract,
   Multiply,
   Divide,
+  Modulo,
   Equal,
   NotEqual,
   GreaterThan,
   LessThan,
   GreaterThanOrEqual,
   LessThanOrEqual,
+  And,
+  Or,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum AssignOperator {
+pub enum AssignOp {
   Assign,
   AddAssign,
   SubtractAssign,
   MultiplyAssign,
   DivideAssign,
+  ModuloAssign,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -36,10 +40,10 @@ pub enum Expression {
   String(String),
   Boolean(bool),
 
-  Unary(UnaryOperator, Box<Expression>),
-  Binary(Box<Expression>, BinaryOperator, Box<Expression>),
+  Unary(UnaryOp, Box<Expression>),
+  Binary(Box<Expression>, BinaryOp, Box<Expression>),
 
-  Assign(String, AssignOperator, Box<Expression>),
+  Assign(String, AssignOp, Box<Expression>),
 
   Call(Box<Expression>, Vec<Expression>),
 }

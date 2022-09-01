@@ -1,6 +1,6 @@
 use std::fmt;
 use std::num::ParseFloatError;
-use crate::ast::{AssignOperator, BinaryOperator, Expression, Program, Statement, UnaryOperator};
+use crate::ast::{AssignOp, BinaryOp, Expression, Program, Statement, UnaryOp};
 use crate::token::{TokenKind, Token};
 
 #[derive(Debug, Clone)]
@@ -211,16 +211,16 @@ impl Parser {
     };
 
     let binary_operator = match self.peek().kind {
-      TokenKind::Plus => BinaryOperator::Add,
-      TokenKind::Minus => BinaryOperator::Subtract,
-      TokenKind::Star => BinaryOperator::Multiply,
-      TokenKind::Slash => BinaryOperator::Divide,
-      TokenKind::EqualEqual => BinaryOperator::Equal,
-      TokenKind::BangEqual => BinaryOperator::NotEqual,
-      TokenKind::Less => BinaryOperator::LessThan,
-      TokenKind::LessEqual => BinaryOperator::LessThanOrEqual,
-      TokenKind::Greater => BinaryOperator::GreaterThan,
-      TokenKind::GreaterEqual => BinaryOperator::GreaterThanOrEqual,
+      TokenKind::Plus => BinaryOp::Add,
+      TokenKind::Minus => BinaryOp::Subtract,
+      TokenKind::Star => BinaryOp::Multiply,
+      TokenKind::Slash => BinaryOp::Divide,
+      TokenKind::EqualEqual => BinaryOp::Equal,
+      TokenKind::BangEqual => BinaryOp::NotEqual,
+      TokenKind::Less => BinaryOp::LessThan,
+      TokenKind::LessEqual => BinaryOp::LessThanOrEqual,
+      TokenKind::Greater => BinaryOp::GreaterThan,
+      TokenKind::GreaterEqual => BinaryOp::GreaterThanOrEqual,
       _ => return None,
     };
 
@@ -238,9 +238,9 @@ impl Parser {
 
   fn parse_unary_operation_expression(&mut self) -> Option<Expression> {
     let unary_operator = match self.peek().kind {
-      TokenKind::Plus => UnaryOperator::Positive,
-      TokenKind::Minus => UnaryOperator::Negative,
-      TokenKind::Bang => UnaryOperator::Not,
+      TokenKind::Plus => UnaryOp::Positive,
+      TokenKind::Minus => UnaryOp::Negative,
+      TokenKind::Bang => UnaryOp::Not,
       _ => return None,
     };
 
@@ -328,11 +328,11 @@ impl Parser {
     self.advance();
 
     let assign_operator = match self.peek().kind {
-      TokenKind::Equal => AssignOperator::Assign,
-      TokenKind::PlusEqual => AssignOperator::AddAssign,
-      TokenKind::MinusEqual => AssignOperator::SubtractAssign,
-      TokenKind::StarEqual => AssignOperator::MultiplyAssign,
-      TokenKind::SlashEqual => AssignOperator::DivideAssign,
+      TokenKind::Equal => AssignOp::Assign,
+      TokenKind::PlusEqual => AssignOp::AddAssign,
+      TokenKind::MinusEqual => AssignOp::SubtractAssign,
+      TokenKind::StarEqual => AssignOp::MultiplyAssign,
+      TokenKind::SlashEqual => AssignOp::DivideAssign,
       _ => return None,
     };
 
@@ -534,7 +534,7 @@ impl Precedence {
 
 #[cfg(test)]
 mod tests {
-  use crate::ast::{BinaryOperator, Expression, Statement, UnaryOperator};
+  use crate::ast::{BinaryOp, Expression, Statement, UnaryOp};
   use crate::lexer::Lexer;
   use crate::parser::Parser;
 

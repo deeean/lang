@@ -145,6 +145,15 @@ impl <'a> Lexer<'a> {
           _ => TokenKind::Slash,
         }
       },
+      b'%' => {
+        match self.next_peek() {
+          b'=' => {
+            self.advance();
+            TokenKind::PercentEqual
+          },
+          _ => TokenKind::Percent,
+        }
+      },
       b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
         return self.identifier();
       }
@@ -292,25 +301,215 @@ mod tests {
   use crate::token::TokenKind;
 
   #[test]
-  fn lex() {
-    assert_eq!(Lexer::new(r#"let x = 0.1 + 100_000_000;"#).lex().iter().map(|t| t.kind).collect::<Vec<_>>(), vec![
-      TokenKind::Let,
-      TokenKind::Identifier,
-      TokenKind::Equal,
-      TokenKind::Number,
-      TokenKind::Plus,
-      TokenKind::Number,
-      TokenKind::Semicolon,
-      TokenKind::Eof,
-    ]);
+  fn lexer() {
+    let test_cases = vec![
+      (
+        "let a = 1;",
+        vec![
+          TokenKind::Let,
+          TokenKind::Identifier,
+          TokenKind::Equal,
+          TokenKind::Number,
+          TokenKind::Semicolon,
+          TokenKind::Eof,
+        ],
+      ),
+      (
+        "let a = 1.0;",
+        vec![
+          TokenKind::Let,
+          TokenKind::Identifier,
+          TokenKind::Equal,
+          TokenKind::Number,
+          TokenKind::Semicolon,
+          TokenKind::Eof,
+        ],
+      ),
+      (
+        "let a = 100_000_000;",
+        vec![
+          TokenKind::Let,
+          TokenKind::Identifier,
+          TokenKind::Equal,
+          TokenKind::Number,
+          TokenKind::Semicolon,
+          TokenKind::Eof,
+        ],
+      ),
+      (
+        r#"let a = "hello \"world\"";"#,
+        vec![
+          TokenKind::Let,
+          TokenKind::Identifier,
+          TokenKind::Equal,
+          TokenKind::String,
+          TokenKind::Semicolon,
+          TokenKind::Eof,
+        ],
+      ),
+      (
+        r#"let a = false;"#,
+        vec![
+          TokenKind::Let,
+          TokenKind::Identifier,
+          TokenKind::Equal,
+          TokenKind::Boolean,
+          TokenKind::Semicolon,
+          TokenKind::Eof,
+        ],
+      ),
+      (
+        r#"let a = true;"#,
+        vec![
+          TokenKind::Let,
+          TokenKind::Identifier,
+          TokenKind::Equal,
+          TokenKind::Boolean,
+          TokenKind::Semicolon,
+          TokenKind::Eof,
+        ],
+      ),
+      (
+        r#"let a = null;"#,
+        vec![
+          TokenKind::Let,
+          TokenKind::Identifier,
+          TokenKind::Equal,
+          TokenKind::Null,
+          TokenKind::Semicolon,
+          TokenKind::Eof,
+        ],
+      ),
+      (
+        r#"// it works"#,
+        vec![
+          TokenKind::Comment,
+          TokenKind::Eof,
+        ],
+      ),
+      (
+        "println(1, 2, 3, 4, 5);",
+        vec![
+          TokenKind::Identifier,
+          TokenKind::LeftParen,
+          TokenKind::Number,
+          TokenKind::Comma,
+          TokenKind::Number,
+          TokenKind::Comma,
+          TokenKind::Number,
+          TokenKind::Comma,
+          TokenKind::Number,
+          TokenKind::Comma,
+          TokenKind::Number,
+          TokenKind::RightParen,
+          TokenKind::Semicolon,
+          TokenKind::Eof,
+        ],
+      ),
+      (
+        "10 + 10 - 10 * 10 / 10 % 10",
+        vec![
+          TokenKind::Number,
+          TokenKind::Plus,
+          TokenKind::Number,
+          TokenKind::Minus,
+          TokenKind::Number,
+          TokenKind::Star,
+          TokenKind::Number,
+          TokenKind::Slash,
+          TokenKind::Number,
+          TokenKind::Percent,
+          TokenKind::Number,
+          TokenKind::Eof,
+        ],
+      ),
+      (
+        r#"let i = 100;
+i = 500;
+i += 10;
+i -= 10;
+i *= 10;
+i /= 10;
+i %= 10;"#,
+        vec![
+          TokenKind::Let,
+          TokenKind::Identifier,
+          TokenKind::Equal,
+          TokenKind::Number,
+          TokenKind::Semicolon,
 
-    assert_eq!(Lexer::new(r#"let res = "Hello, world";"#).lex().iter().map(|t| t.kind).collect::<Vec<_>>(), vec![
-      TokenKind::Let,
-      TokenKind::Identifier,
-      TokenKind::Equal,
-      TokenKind::String,
-      TokenKind::Semicolon,
-      TokenKind::Eof,
-    ]);
+          TokenKind::Identifier,
+          TokenKind::Equal,
+          TokenKind::Number,
+          TokenKind::Semicolon,
+
+          TokenKind::Identifier,
+          TokenKind::PlusEqual,
+          TokenKind::Number,
+          TokenKind::Semicolon,
+
+          TokenKind::Identifier,
+          TokenKind::MinusEqual,
+          TokenKind::Number,
+          TokenKind::Semicolon,
+
+          TokenKind::Identifier,
+          TokenKind::StarEqual,
+          TokenKind::Number,
+          TokenKind::Semicolon,
+
+          TokenKind::Identifier,
+          TokenKind::SlashEqual,
+          TokenKind::Number,
+          TokenKind::Semicolon,
+
+          TokenKind::Identifier,
+          TokenKind::PercentEqual,
+          TokenKind::Number,
+          TokenKind::Semicolon,
+
+          TokenKind::Eof,
+        ]
+      ),
+      (
+        r#"for (let i = 0; i < 10; i += 1) {
+  println(i);
+}"#,
+        vec![
+          TokenKind::For,
+          TokenKind::LeftParen,
+          TokenKind::Let,
+          TokenKind::Identifier,
+          TokenKind::Equal,
+          TokenKind::Number,
+          TokenKind::Semicolon,
+          TokenKind::Identifier,
+          TokenKind::Less,
+          TokenKind::Number,
+          TokenKind::Semicolon,
+          TokenKind::Identifier,
+          TokenKind::PlusEqual,
+          TokenKind::Number,
+          TokenKind::RightParen,
+          TokenKind::LeftBrace,
+          TokenKind::Identifier,
+          TokenKind::LeftParen,
+          TokenKind::Identifier,
+          TokenKind::RightParen,
+          TokenKind::Semicolon,
+          TokenKind::RightBrace,
+          TokenKind::Eof,
+        ]
+      )
+    ];
+
+    for (input, expected) in test_cases {
+      let mut lexer = Lexer::new(input);
+      let tokens = lexer.lex();
+
+      println!();
+      println!("{}", input);
+      assert_eq!(expected, tokens.iter().map(|t| t.kind).collect::<Vec<_>>());
+    }
   }
 }
