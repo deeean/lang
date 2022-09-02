@@ -41,6 +41,7 @@ pub enum TokenKind {
   For,
   Break,
   Continue,
+  Return,
 
   Comment,
 }

@@ -272,6 +272,7 @@ impl <'a> Lexer<'a> {
       "for" => TokenKind::For,
       "break" => TokenKind::Break,
       "continue" => TokenKind::Continue,
+      "return" => TokenKind::Return,
       _ => TokenKind::Identifier,
     };
 
@@ -302,7 +303,7 @@ mod tests {
 
   #[test]
   fn lexer() {
-    let test_cases = vec![
+    let testcases = vec![
       (
         "let a = 1;",
         vec![
@@ -503,9 +504,8 @@ i %= 10;"#,
       )
     ];
 
-    for (input, expected) in test_cases {
-      let mut lexer = Lexer::new(input);
-      let tokens = lexer.lex();
+    for (input, expected) in testcases {
+      let tokens = Lexer::new(input).lex();
 
       println!();
       println!("{}", input);

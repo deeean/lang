@@ -49,7 +49,7 @@ impl Parser {
   }
 
   fn parse_number(slice: String) -> Result<f64, ParseFloatError> {
-    let reg = regex::Regex::new("_").unwrap();
+    let reg = regex::Regex::new("_").expect("Failed to create regex");
     return reg.replace_all(slice.as_str(), "").parse::<f64>()
   }
 
@@ -212,15 +212,16 @@ impl Parser {
 
     let binary_operator = match self.peek().kind {
       TokenKind::Plus => BinaryOp::Add,
-      TokenKind::Minus => BinaryOp::Subtract,
-      TokenKind::Star => BinaryOp::Multiply,
-      TokenKind::Slash => BinaryOp::Divide,
+      TokenKind::Minus => BinaryOp::Sub,
+      TokenKind::Star => BinaryOp::Mul,
+      TokenKind::Slash => BinaryOp::Div,
       TokenKind::EqualEqual => BinaryOp::Equal,
       TokenKind::BangEqual => BinaryOp::NotEqual,
       TokenKind::Less => BinaryOp::LessThan,
       TokenKind::LessEqual => BinaryOp::LessThanOrEqual,
       TokenKind::Greater => BinaryOp::GreaterThan,
       TokenKind::GreaterEqual => BinaryOp::GreaterThanOrEqual,
+      TokenKind::Percent => BinaryOp::Mod,
       _ => return None,
     };
 
@@ -333,6 +334,7 @@ impl Parser {
       TokenKind::MinusEqual => AssignOp::SubtractAssign,
       TokenKind::StarEqual => AssignOp::MultiplyAssign,
       TokenKind::SlashEqual => AssignOp::DivideAssign,
+      TokenKind::PercentEqual => AssignOp::ModuloAssign,
       _ => return None,
     };
 
@@ -355,7 +357,8 @@ impl Parser {
           TokenKind::PlusEqual |
           TokenKind::MinusEqual |
           TokenKind::SlashEqual |
-          TokenKind::StarEqual => self.parse_assign_expression(),
+          TokenKind::StarEqual |
+          TokenKind::PercentEqual => self.parse_assign_expression(),
           _ => self.parse_identifier_expression(),
         }
       },
@@ -378,7 +381,8 @@ impl Parser {
         TokenKind::Less |
         TokenKind::LessEqual |
         TokenKind::Greater |
-        TokenKind::GreaterEqual => {
+        TokenKind::GreaterEqual |
+        TokenKind::Percent => {
           self.advance();
           left = self.parse_binary_operation_expression(left);
         },
@@ -406,28 +410,10 @@ impl Parser {
     }
   }
 
-  fn parse_block_statements(&mut self) -> Option<Program> {
-    println!("{:?}", self.peek());
-
-    if !self.expect_token_kind(TokenKind::LeftBrace) {
-      return None;
-    }
-
-    let program = self.parse_statements(TokenKind::RightBrace);
-
-    println!("{:?}", self.peek());
-
-    program
-  }
-
   fn parse_statements(&mut self, end_token_kind: TokenKind) -> Option<Program> {
     let mut statements = Vec::new();
 
     loop {
-      if self.peek().kind == TokenKind::Eof {
-        break;
-      }
-
       match self.parse_statement() {
         Some(stmt) => {
           statements.push(stmt);
@@ -435,11 +421,25 @@ impl Parser {
         None => {}
       }
 
-      if self.peek().kind == end_token_kind {
+      if self.peek().kind == end_token_kind || self.peek().kind == TokenKind::Eof {
         break;
       }
 
-      self.advance();
+      match statements.last() {
+        Some(stmt) => {
+          match stmt {
+            Statement::For(..) => {
+
+            },
+            _ => {
+              self.advance();
+            }
+          }
+        },
+        None => {
+          self.advance();
+        }
+      }
     }
 
     if statements.is_empty() {
@@ -450,14 +450,11 @@ impl Parser {
   }
 
   fn parse_for_statement(&mut self) -> Option<Statement> {
-    match self.next_peek().kind {
-      TokenKind::LeftParen => {
-        self.advance();
-      },
-      _ => return None,
-    }
-
     self.advance();
+
+    if !self.expect_token_kind(TokenKind::LeftParen) {
+      return None;
+    }
 
     let initializer = self.parse_statements(TokenKind::Semicolon);
 
@@ -471,40 +468,23 @@ impl Parser {
 
     self.advance();
 
-    let block_statements = match self.parse_block_statements() {
-      Some(statements) => statements,
-      None => return None,
-    };
+    let statements = self.parse_statements(TokenKind::RightBrace);
 
-    Some(Statement::For(initializer, condition, finalize, block_statements))
+    self.advance();
+
+    Some(Statement::For(initializer, condition, finalize, statements))
   }
 
   fn parse_statement(&mut self) -> Option<Statement> {
     match self.peek().kind {
-      TokenKind::RightBrace => {
-        self.advance();
-        self.parse_expression_statement()
-      },
       TokenKind::Let => self.parse_let_statement(),
       TokenKind::For => self.parse_for_statement(),
       _ => self.parse_expression_statement(),
     }
   }
 
-  pub fn parse(&mut self) -> Program {
-    let mut statements = Vec::new();
-    while self.peek().kind != TokenKind::Eof {
-      match self.parse_statement() {
-        Some(stmt) => {
-          statements.push(stmt);
-        },
-        None => {}
-      }
-
-      self.advance();
-    }
-
-    statements
+  pub fn parse(&mut self) -> Option<Program> {
+    self.parse_statements(TokenKind::Eof)
   }
 }
 
@@ -525,7 +505,7 @@ impl Precedence {
       TokenKind::EqualEqual | TokenKind::BangEqual => Precedence::Equality,
       TokenKind::Greater | TokenKind::GreaterEqual | TokenKind::Less | TokenKind::LessEqual => Precedence::Comparison,
       TokenKind::Plus | TokenKind::Minus => Precedence::Term,
-      TokenKind::Star | TokenKind::Slash => Precedence::Factor,
+      TokenKind::Star | TokenKind::Slash | TokenKind::Percent => Precedence::Factor,
       TokenKind::LeftParen => Precedence::Call,
       _ => Precedence::None,
     }
@@ -534,12 +514,161 @@ impl Precedence {
 
 #[cfg(test)]
 mod tests {
-  use crate::ast::{BinaryOp, Expression, Statement, UnaryOp};
+  use crate::ast::{AssignOp, BinaryOp, Expression, Statement, UnaryOp};
   use crate::lexer::Lexer;
   use crate::parser::Parser;
 
   #[test]
-  fn parse() {
+  fn parser() {
+    let testcases = vec![
+      (
+        "let x = 5;",
+        vec![
+          Statement::Let("x".to_string(), Expression::Number(5.0)),
+        ],
+      ),
+      (
+        r#"let x = "Hello, \"world\"";"#,
+        vec![
+          Statement::Let("x".to_string(), Expression::String(r#"Hello, \"world\""#.to_string())),
+        ],
+      ),
+      (
+        "let x = null;",
+        vec![
+          Statement::Let("x".to_string(), Expression::Null),
+        ],
+      ),
+      (
+        r#"println(1, 2, 3, 4, 5);"#,
+        vec![
+          Statement::Expression(
+            Expression::Call(
+            Box::new(
+              Expression::Identifier("println".to_string())
+            ),
+            vec![
+                Expression::Number(1.0),
+                Expression::Number(2.0),
+                Expression::Number(3.0),
+                Expression::Number(4.0),
+                Expression::Number(5.0),
+              ],
+            )
+          ),
+        ],
+      ),
+      (
+        r#"
+for (let i = 0; i < 10; i += 1) {
+  println(i);
+}
+"#,
+        vec![
+          Statement::For(
+            Some(vec![
+              Statement::Let("i".to_string(), Expression::Number(0.0)),
+            ]),
+            Some(Expression::Binary(
+              Box::new(Expression::Identifier("i".to_string())),
+              BinaryOp::LessThan,
+              Box::new(Expression::Number(10.0)),
+            )),
+            Some(vec![
+              Statement::Expression(
+                Expression::Assign(
+                  "i".to_string(),
+                  AssignOp::AddAssign,
+                  Box::new(Expression::Number(1.0)),
+                ),
+              ),
+            ]),
+            Some(vec![
+              Statement::Expression(
+                Expression::Call(
+                  Box::new(
+                    Expression::Identifier("println".to_string())
+                  ),
+                  vec![
+                    Expression::Identifier("i".to_string()),
+                  ],
+                )
+              ),
+            ],)
+          ),
+        ],
+      ),
+      (
+        r#"for (;;) {}"#,
+        vec![
+          Statement::For(
+            None,
+            None,
+            None,
+            None,
+          ),
+        ],
+      ),
+      (
+        r#"
+let i = 0;
 
+for (;;) {
+  let i = 0;
+
+  for (;;) {
+    let i = 0;
+
+    for (;;) {
+      let i = 0;
+    }
+
+    let i = 0;
+  }
+
+  let i = 0;
+}
+
+let i = 0;
+        "#,
+        vec![
+          Statement::Let("i".to_string(), Expression::Number(0.0)),
+          Statement::For(
+            None,
+            None,
+            None,
+            Some(vec![
+              Statement::Let("i".to_string(), Expression::Number(0.0)),
+              Statement::For(
+                None,
+                None,
+                None,
+                Some(vec![
+                  Statement::Let("i".to_string(), Expression::Number(0.0)),
+                  Statement::For(
+                    None,
+                    None,
+                    None,
+                    Some(vec![
+                      Statement::Let("i".to_string(), Expression::Number(0.0)),
+                    ]),
+                  ),
+                  Statement::Let("i".to_string(), Expression::Number(0.0)),
+                ]),
+              ),
+              Statement::Let("i".to_string(), Expression::Number(0.0)),
+            ]),
+          ),
+          Statement::Let("i".to_string(), Expression::Number(0.0)),
+        ],
+      )
+    ];
+
+    for (i, (input, expected)) in testcases.into_iter().enumerate() {
+      let mut program = Parser::new(Lexer::new(input).lex()).parse();
+      println!("----- {} -----", i);
+      println!("{}", input.trim());
+      assert_eq!(program.unwrap(), expected);
+    }
   }
 }

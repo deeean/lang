@@ -8,10 +8,10 @@ pub enum UnaryOp {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BinaryOp {
   Add,
-  Subtract,
-  Multiply,
-  Divide,
-  Modulo,
+  Sub,
+  Mul,
+  Div,
+  Mod,
   Equal,
   NotEqual,
   GreaterThan,
@@ -42,9 +42,7 @@ pub enum Expression {
 
   Unary(UnaryOp, Box<Expression>),
   Binary(Box<Expression>, BinaryOp, Box<Expression>),
-
   Assign(String, AssignOp, Box<Expression>),
-
   Call(Box<Expression>, Vec<Expression>),
 }
 
@@ -55,7 +53,7 @@ pub enum Statement {
     Option<Program>,
     Option<Expression>,
     Option<Program>,
-    Program,
+    Option<Program>,
   ),
   Expression(Expression),
 }
