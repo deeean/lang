@@ -8,8 +8,8 @@ pub struct Lexer<'a> {
 }
 
 impl <'a> Lexer<'a> {
-  pub fn new(input: &str) -> Lexer<'_> {
-    Lexer {
+  pub fn new(input: &'a str) -> Self {
+    Self {
       input,
       curr: 0,
       next: 1,
@@ -58,7 +58,7 @@ impl <'a> Lexer<'a> {
     }
   }
 
-  fn next_token(&mut self) -> Token {
+  fn token(&mut self) -> Token<'a> {
     self.skip_whitespace();
 
     let start = self.curr;
@@ -136,7 +136,7 @@ impl <'a> Lexer<'a> {
       b'/' => {
         match self.next_peek() {
           b'/' => {
-            return self.comment();
+            return self.read_comment();
           }
           b'=' => {
             self.advance();
@@ -155,15 +155,15 @@ impl <'a> Lexer<'a> {
         }
       },
       b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
-        return self.identifier();
+        return self.read_identifier();
       }
       b'"' => {
-        return self.string();
+        return self.read_string();
       }
       b'0'..=b'9' => {
-        return self.number();
+        return self.read_number();
       }
-      0 => return Token::new(TokenKind::Eof, "".to_owned(), Span(self.next, self.next)),
+      0 => return Token::new(TokenKind::Eof, "", Span(self.next, self.next)),
       _ => TokenKind::Illegal,
     };
 
@@ -172,10 +172,10 @@ impl <'a> Lexer<'a> {
 
     self.advance();
 
-    Token::new(kind, slice.to_owned(), span)
+    Token::new(kind, slice, span)
   }
 
-  fn number(&mut self) -> Token {
+  fn read_number(&mut self) -> Token<'a> {
     let start = self.curr;
 
     loop {
@@ -206,10 +206,10 @@ impl <'a> Lexer<'a> {
 
     let slice = &self.input[start..self.curr];
 
-    Token::new(TokenKind::Number, slice.to_owned(), Span(start, self.curr))
+    Token::new(TokenKind::Number, slice, Span(start, self.curr))
   }
 
-  fn string(&mut self) -> Token {
+  fn read_string(&mut self) -> Token<'a> {
     self.advance();
 
     let start = self.curr;
@@ -219,7 +219,7 @@ impl <'a> Lexer<'a> {
         b'"' | 0 => {
           let slice = &self.input[start..self.curr];
           self.advance();
-          return Token::new(TokenKind::String, slice.to_owned(), Span(start, self.curr));
+          return Token::new(TokenKind::String, slice, Span(start, self.curr));
         }
         b'\\' => {
           if self.next_peek() == b'\"' {
@@ -234,7 +234,7 @@ impl <'a> Lexer<'a> {
     }
   }
 
-  fn comment(&mut self) -> Token {
+  fn read_comment(&mut self) -> Token<'a> {
     let start = self.curr;
 
     loop {
@@ -249,10 +249,10 @@ impl <'a> Lexer<'a> {
       }
     };
 
-    Token::new(TokenKind::Comment, self.input[start..self.curr].to_owned(), Span(start, self.curr))
+    Token::new(TokenKind::Comment, &self.input[start..self.curr], Span(start, self.curr))
   }
 
-  fn identifier(&mut self) -> Token {
+  fn read_identifier(&mut self) -> Token<'a> {
     let start = self.curr;
 
     loop {
@@ -276,23 +276,24 @@ impl <'a> Lexer<'a> {
       _ => TokenKind::Identifier,
     };
 
-    Token::new(kind, slice.to_owned(), Span(start, self.curr))
+    Token::new(kind, slice, Span(start, self.curr))
   }
 
-  pub fn lex(&mut self) -> Vec<Token> {
+  pub fn lex(&mut self) -> Vec<Token<'a>> {
     let mut tokens = Vec::new();
 
     loop {
-      let token = self.next_token();
-      let is_eof = token.kind == TokenKind::Eof;
+      let token = self.token();
       tokens.push(token);
 
-      if is_eof {
-        break;
+      if let Some(last_token) = tokens.last() {
+        if last_token.kind == TokenKind::Eof {
+          break;
+        }
       }
     }
 
-    tokens
+    return tokens;
   }
 }
 
@@ -509,7 +510,7 @@ i %= 10;"#,
 
       println!();
       println!("{}", input);
-      assert_eq!(expected, tokens.iter().map(|t| t.kind).collect::<Vec<_>>());
+      assert_eq!(expected, tokens.into_iter().map(|t| t.kind).collect::<Vec<_>>());
     }
   }
 }

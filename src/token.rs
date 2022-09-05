@@ -1,7 +1,7 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenKind {
   Illegal,
-  Eof,
+  Comment,
 
   LeftParen,
   RightParen,
@@ -43,21 +43,21 @@ pub enum TokenKind {
   Continue,
   Return,
 
-  Comment,
+  Eof,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Span(pub usize, pub usize);
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Token {
+pub struct Token<'a> {
   pub kind: TokenKind,
-  pub slice: String,
+  pub slice: &'a str,
   pub span: Span,
 }
 
-impl Token {
-  pub fn new(kind: TokenKind, slice: String, span: Span) -> Token {
+impl <'a> Token<'a> {
+  pub fn new(kind: TokenKind, slice: &'a str, span: Span) -> Token {
     Token {
       kind,
       slice,

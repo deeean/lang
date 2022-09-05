@@ -36,15 +36,16 @@ impl fmt::Display for ParseError {
 
 pub type ParseErrors = Vec<ParseError>;
 
-pub struct Parser {
-  tokens: Vec<Token>,
+#[derive(Debug)]
+pub struct Parser<'a> {
+  tokens: Vec<Token<'a>>,
   errors: ParseErrors,
   curr: usize,
   next: usize,
 }
 
-impl Parser {
-  pub fn new(tokens: Vec<Token>) -> Self {
+impl <'a> Parser<'a> {
+  pub fn new(tokens: Vec<Token<'a>>) -> Self {
     Self { tokens, errors: vec![], curr: 0, next: 1 }
   }
 
@@ -53,19 +54,19 @@ impl Parser {
     return reg.replace_all(slice.as_str(), "").parse::<f64>()
   }
 
-  fn is_ended(&self) -> bool {
+  fn is_at_end(&self) -> bool {
     self.curr >= self.tokens.len()
   }
 
-  fn peek(&self) -> Token {
-    if self.is_ended() {
+  fn peek(&self) -> Token<'a> {
+    if self.is_at_end() {
       self.tokens[self.tokens.len() - 1].clone()
     } else {
       self.tokens[self.curr].clone()
     }
   }
 
-  fn next_peek(&self) -> Token {
+  fn next_peek(&self) -> Token<'a> {
     if self.next >= self.tokens.len() {
       self.tokens[self.tokens.len() - 1].clone()
     } else {
@@ -74,10 +75,6 @@ impl Parser {
   }
 
   fn advance(&mut self) -> Token {
-    if self.is_ended() {
-      return self.tokens[self.tokens.len() - 1].clone()
-    }
-
     let token = self.peek();
     self.curr = self.next;
     self.next += 1;
@@ -120,7 +117,7 @@ impl Parser {
 
   fn parse_identifier(&mut self) -> Option<String> {
     match self.peek().kind {
-      TokenKind::Identifier => Some(self.peek().slice),
+      TokenKind::Identifier => Some(self.peek().slice.to_string()),
       _ => None,
     }
   }
@@ -135,7 +132,7 @@ impl Parser {
   fn parse_number_expression(&mut self) -> Option<Expression> {
     match self.peek().kind {
       TokenKind::Number => {
-        match Parser::parse_number(self.peek().slice) {
+        match Parser::parse_number(self.peek().slice.to_string()) {
           Ok(number) => Some(Expression::Number(number)),
           Err(err) => {
             self.errors.push(ParseError::new(
@@ -153,7 +150,7 @@ impl Parser {
   fn parse_string_expression(&mut self) -> Option<Expression> {
     match self.peek().kind {
       TokenKind::String => {
-        Some(Expression::String(self.peek().slice))
+        Some(Expression::String(self.peek().slice.to_string()))
       },
       _ => None,
     }
