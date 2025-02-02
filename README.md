@@ -1,5 +1,5 @@
 # lang
-실험적인 언어로, 정적타입언어이며, LLVM으로 컴파일 됩니다.
+An experimental statically-typed language that compiles to LLVM
 
 ## Syntax
 ```lang
