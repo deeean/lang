@@ -38,6 +38,61 @@ impl<'ctx> Compiler<'ctx> {
         self.module.get_function(name)
     }
 
+    fn build_string_concat(&mut self, a: BasicValueEnum<'ctx>, b: BasicValueEnum<'ctx>) -> Result<BasicValueEnum<'ctx>, String> {
+        let strlen_func = self.get_function("strlen").unwrap_or_else(|| {
+            let str_ptr_type = self.context.ptr_type(AddressSpace::default());
+            let fn_type = self.context.i64_type().fn_type(&[str_ptr_type.into()], false);
+            self.module.add_function("strlen", fn_type, Some(Linkage::External))
+        });
+
+        // `malloc` 함수 가져오기
+        let malloc_func = self.get_function("malloc").unwrap_or_else(|| {
+            let fn_type = self.context.ptr_type(AddressSpace::default()).fn_type(&[self.context.i64_type().into()], false);
+            self.module.add_function("malloc", fn_type, Some(Linkage::External))
+        });
+
+        // `strcpy` 함수 가져오기
+        let strcpy_func = self.get_function("strcpy").unwrap_or_else(|| {
+            let str_ptr_type = self.context.ptr_type(AddressSpace::default());
+            let fn_type = str_ptr_type.fn_type(&[str_ptr_type.into(), str_ptr_type.into()], false);
+            self.module.add_function("strcpy", fn_type, Some(Linkage::External))
+        });
+
+        // `strcat` 함수 가져오기
+        let strcat_func = self.get_function("strcat").unwrap_or_else(|| {
+            let str_ptr_type = self.context.ptr_type(AddressSpace::default());
+            let fn_type = str_ptr_type.fn_type(&[str_ptr_type.into(), str_ptr_type.into()], false);
+            self.module.add_function("strcat", fn_type, Some(Linkage::External))
+        });
+
+        let str1_ptr = a.into_pointer_value();
+        let str2_ptr = b.into_pointer_value();
+
+        // str1 길이 계산
+        let str1_len = self.builder.build_call(strlen_func, &[str1_ptr.into()], "str1_len").unwrap()
+            .try_as_basic_value().left().unwrap().into_int_value();
+
+        // str2 길이 계산
+        let str2_len = self.builder.build_call(strlen_func, &[str2_ptr.into()], "str2_len").unwrap()
+            .try_as_basic_value().left().unwrap().into_int_value();
+
+        // 총 길이 = str1_len + str2_len + 1 (널 문자 포함)
+        let total_len = self.builder.build_int_add(str1_len, str2_len, "total_len").unwrap();
+        let total_len = self.builder.build_int_add(total_len, self.context.i64_type().const_int(1, false), "total_len_plus_one").unwrap();
+
+        // `malloc`을 사용하여 새 문자열 버퍼 할당
+        let new_str_ptr = self.builder.build_call(malloc_func, &[total_len.into()], "new_str").unwrap()
+            .try_as_basic_value().left().unwrap().into_pointer_value();
+
+        // `strcpy(new_str, str1);`
+        self.builder.build_call(strcpy_func, &[new_str_ptr.into(), str1_ptr.into()], "call_strcpy").unwrap();
+
+        // `strcat(new_str, str2);`
+        self.builder.build_call(strcat_func, &[new_str_ptr.into(), str2_ptr.into()], "call_strcat").unwrap();
+
+        Ok(new_str_ptr.into())
+    }
+
     fn compile_expression(&mut self, expression: Expression) -> Result<BasicValueEnum<'ctx>, String> {
         match expression {
             Expression::Unary { operator, operand } => {
@@ -61,7 +116,15 @@ impl<'ctx> Compiler<'ctx> {
 
                 match operator {
                     BinaryOperator::Add => {
-                        Ok(self.builder.build_int_add(lhs.into_int_value(), rhs.into_int_value(), "tmpadd").unwrap().into())
+                        if lhs.is_int_value() && rhs.is_int_value() {
+                            Ok(self.builder.build_int_add(lhs.into_int_value(), rhs.into_int_value(), "tmpadd").unwrap().into())
+                        } else if lhs.is_pointer_value() && rhs.is_pointer_value() {
+                            self.build_string_concat(lhs, rhs)
+                        } else {
+                            Err("Unsupported types for addition".to_string())
+                        }
+
+                        // Ok(self.builder.build_int_add(lhs.into_int_value(), rhs.into_int_value(), "tmpadd").unwrap().into())
                     }
                     BinaryOperator::Subtract => {
                         Ok(self.builder.build_int_sub(lhs.into_int_value(), rhs.into_int_value(), "tmpsub").unwrap().into())
@@ -108,7 +171,7 @@ impl<'ctx> Compiler<'ctx> {
                         }
 
                         let argsv: Vec<BasicMetadataValueEnum> =
-                            compiled_args.iter().by_ref().map(|&val| val.into()).collect();
+                            compiled_args.iter().map(|&val| val.into()).collect();
 
                         match self.builder
                             .build_call(function, &argsv, "tmp")
@@ -247,8 +310,7 @@ impl<'ctx> Compiler<'ctx> {
 
                     let param_value = function
                         .get_nth_param(i as u32)
-                        .expect("Expected parameter")
-                        .into_int_value();
+                        .expect("Expected parameter");
 
                     param_value.set_name(&param.name);
 
