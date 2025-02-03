@@ -45,20 +45,17 @@ impl<'ctx> Compiler<'ctx> {
             self.module.add_function("strlen", fn_type, Some(Linkage::External))
         });
 
-        // `malloc` 함수 가져오기
         let malloc_func = self.get_function("malloc").unwrap_or_else(|| {
             let fn_type = self.context.ptr_type(AddressSpace::default()).fn_type(&[self.context.i64_type().into()], false);
             self.module.add_function("malloc", fn_type, Some(Linkage::External))
         });
 
-        // `strcpy` 함수 가져오기
         let strcpy_func = self.get_function("strcpy").unwrap_or_else(|| {
             let str_ptr_type = self.context.ptr_type(AddressSpace::default());
             let fn_type = str_ptr_type.fn_type(&[str_ptr_type.into(), str_ptr_type.into()], false);
             self.module.add_function("strcpy", fn_type, Some(Linkage::External))
         });
 
-        // `strcat` 함수 가져오기
         let strcat_func = self.get_function("strcat").unwrap_or_else(|| {
             let str_ptr_type = self.context.ptr_type(AddressSpace::default());
             let fn_type = str_ptr_type.fn_type(&[str_ptr_type.into(), str_ptr_type.into()], false);
@@ -68,35 +65,29 @@ impl<'ctx> Compiler<'ctx> {
         let str1_ptr = a.into_pointer_value();
         let str2_ptr = b.into_pointer_value();
 
-        // str1 길이 계산
         let str1_len = self.builder.build_call(strlen_func, &[str1_ptr.into()], "str1_len").unwrap()
             .try_as_basic_value().left().unwrap().into_int_value();
 
-        // str2 길이 계산
         let str2_len = self.builder.build_call(strlen_func, &[str2_ptr.into()], "str2_len").unwrap()
             .try_as_basic_value().left().unwrap().into_int_value();
 
-        // 총 길이 = str1_len + str2_len + 1 (널 문자 포함)
         let total_len = self.builder.build_int_add(str1_len, str2_len, "total_len").unwrap();
         let total_len = self.builder.build_int_add(total_len, self.context.i64_type().const_int(1, false), "total_len_plus_one").unwrap();
 
-        // `malloc`을 사용하여 새 문자열 버퍼 할당
         let new_str_ptr = self.builder.build_call(malloc_func, &[total_len.into()], "new_str").unwrap()
             .try_as_basic_value().left().unwrap().into_pointer_value();
 
-        // `strcpy(new_str, str1);`
         self.builder.build_call(strcpy_func, &[new_str_ptr.into(), str1_ptr.into()], "call_strcpy").unwrap();
 
-        // `strcat(new_str, str2);`
         self.builder.build_call(strcat_func, &[new_str_ptr.into(), str2_ptr.into()], "call_strcat").unwrap();
 
         Ok(new_str_ptr.into())
     }
 
-    fn compile_expression(&mut self, expression: Expression) -> Result<BasicValueEnum<'ctx>, String> {
+    fn compile_expression(&mut self, expression: &Expression) -> Result<BasicValueEnum<'ctx>, String> {
         match expression {
             Expression::Unary { operator, operand } => {
-                let operand = self.compile_expression(*operand)?;
+                let operand = self.compile_expression(operand)?;
 
                 match operator {
                     UnaryOperator::Negate => {
@@ -111,8 +102,8 @@ impl<'ctx> Compiler<'ctx> {
                 }
             }
             Expression::Binary { left, operator, right } => {
-                let lhs = self.compile_expression(*left)?;
-                let rhs = self.compile_expression(*right)?;
+                let lhs = self.compile_expression(left)?;
+                let rhs = self.compile_expression(right)?;
 
                 match operator {
                     BinaryOperator::Add => {
@@ -123,14 +114,15 @@ impl<'ctx> Compiler<'ctx> {
                         } else {
                             Err("Unsupported types for addition".to_string())
                         }
-
-                        // Ok(self.builder.build_int_add(lhs.into_int_value(), rhs.into_int_value(), "tmpadd").unwrap().into())
                     }
                     BinaryOperator::Subtract => {
                         Ok(self.builder.build_int_sub(lhs.into_int_value(), rhs.into_int_value(), "tmpsub").unwrap().into())
                     }
                     BinaryOperator::Multiply => {
                         Ok(self.builder.build_int_mul(lhs.into_int_value(), rhs.into_int_value(), "tmpmul").unwrap().into())
+                    }
+                    BinaryOperator::Modulo => {
+                        Ok(self.builder.build_int_signed_rem(lhs.into_int_value(), rhs.into_int_value(), "tmpmod").unwrap().into())
                     }
                     BinaryOperator::Divide => {
                         Ok(self.builder.build_int_signed_div(lhs.into_int_value(), rhs.into_int_value(), "tmpdiv").unwrap().into())
@@ -195,13 +187,13 @@ impl<'ctx> Compiler<'ctx> {
             Expression::Literal(literal) => {
                 match literal {
                     Literal::I32(value) => {
-                        Ok(self.context.i32_type().const_int(value as u64, false).into())
+                        Ok(self.context.i32_type().const_int(*value as u64, false).into())
                     }
                     Literal::I64(value) => {
-                        Ok(self.context.i64_type().const_int(value as u64, false).into())
+                        Ok(self.context.i64_type().const_int(*value as u64, false).into())
                     }
                     Literal::Boolean(value) => {
-                        Ok(self.context.bool_type().const_int(value as u64, false).into())
+                        Ok(self.context.bool_type().const_int(*value as u64, false).into())
                     }
                     Literal::String(value) => {
                         let string_ptr = self.builder.build_global_string_ptr(&value, "fmt").unwrap();
@@ -213,7 +205,7 @@ impl<'ctx> Compiler<'ctx> {
                 }
             }
             Expression::Variable(name) => {
-                if let Some((pointer_type, value)) = self.variables.get(&name) {
+                if let Some((pointer_type, value)) = self.variables.get(name) {
                     Ok(self.builder.build_load(*pointer_type, *value, &name).unwrap().into())
                 } else {
                     Err(format!("Variable not found: {}", name))
@@ -235,29 +227,158 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    fn compile_statement(&mut self, statement: Statement) -> Result<(), String> {
+    fn compile_statement(&mut self, statement: &Statement) -> Result<(), String> {
         match statement {
             Statement::Assignment {
                 name,
                 value,
             } => {
-                let value = self.compile_expression(value)?;
-                let (_, alloca) = self.variables.get(&name).ok_or(format!("Variable not found: {}", name))?;
+                let value = self.compile_expression(&value)?;
+                let (_, alloca) = self.variables.get(name).ok_or(format!("Variable not found: {}", name))?;
 
                 self.builder.build_store(*alloca, value).unwrap();
 
                 Ok(())
             }
             Statement::VariableDeclaration { name, kind, value } => {
-                let value = self.compile_expression(value)?;
+                let value = self.compile_expression(&value)?;
                 let value_type = self.get_value_type_by_kind(&kind);
 
                 let alloca = self.builder.build_alloca(value_type, &name).unwrap();
 
                 self.builder.build_store(alloca, value).unwrap();
-                self.variables.insert(name, (value_type, alloca));
+                self.variables.insert(name.clone(), (value_type, alloca));
 
                 Ok(())
+            }
+            Statement::If { condition, body, else_ifs, else_body } => {
+                let current_function = self
+                    .builder
+                    .get_insert_block()
+                    .unwrap()
+                    .get_parent()
+                    .unwrap();
+
+                let if_cond_block = self
+                    .context
+                    .append_basic_block(current_function, "if_cond");
+                let if_body_block = self
+                    .context
+                    .append_basic_block(current_function, "if_body");
+                let end_block = self
+                    .context
+                    .append_basic_block(current_function, "if_end");
+
+                let else_ifs_blocks: Vec<_> = else_ifs
+                    .into_iter()
+                    .map(|(cond_expr, body)| {
+                        let cond_block = self
+                            .context
+                            .append_basic_block(current_function, "else_if_cond");
+                        let body_block = self
+                            .context
+                            .append_basic_block(current_function, "else_if_body");
+                        (cond_expr, body, cond_block, body_block)
+                    })
+                    .collect();
+
+                let else_body_block = else_body
+                    .as_ref()
+                    .map(|_| self.context.append_basic_block(current_function, "else_body"));
+
+                self.builder
+                    .build_unconditional_branch(if_cond_block)
+                    .unwrap();
+
+                self.builder.position_at_end(if_cond_block);
+                let cond_value = self.compile_expression(condition)?;
+                let cond_bool = self
+                    .builder
+                    .build_int_compare(
+                        inkwell::IntPredicate::NE,
+                        cond_value.into_int_value(),
+                        self.context.bool_type().const_zero(),
+                        "tmp",
+                    )
+                    .unwrap();
+
+                let main_else_dest = if !else_ifs_blocks.is_empty() {
+                    else_ifs_blocks[0].2
+                } else {
+                    else_body_block.unwrap_or(end_block)
+                };
+
+                self.builder
+                    .build_conditional_branch(cond_bool, if_body_block, main_else_dest)
+                    .unwrap();
+
+                self.builder.position_at_end(if_body_block);
+                for stmt in body {
+                    self.compile_statement(stmt)?;
+                }
+                // Check if the block is already terminated (e.g., by a return)
+                if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                    self.builder
+                        .build_unconditional_branch(end_block)
+                        .unwrap();
+                }
+
+                for i in 0..else_ifs_blocks.len() {
+                    let (cond_expr, body, cond_block, body_block) = &else_ifs_blocks[i];
+
+                    self.builder.position_at_end(*cond_block);
+                    let cond_value = self.compile_expression(cond_expr)?;
+                    let cond_bool = self
+                        .builder
+                        .build_int_compare(
+                            inkwell::IntPredicate::NE,
+                            cond_value.into_int_value(),
+                            self.context.bool_type().const_zero(),
+                            "tmp",
+                        )
+                        .unwrap();
+
+                    let next_else_dest = if i < else_ifs_blocks.len() - 1 {
+                        else_ifs_blocks[i + 1].2
+                    } else {
+                        else_body_block.unwrap_or(end_block)
+                    };
+
+                    self.builder
+                        .build_conditional_branch(cond_bool, *body_block, next_else_dest)
+                        .unwrap();
+
+                    self.builder.position_at_end(*body_block);
+                    for stmt in &**body {
+                        self.compile_statement(stmt)?;
+                    }
+                    if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                        self.builder
+                            .build_unconditional_branch(end_block)
+                            .unwrap();
+                    }
+                }
+
+                if let Some(else_body_block) = else_body_block {
+                    self.builder.position_at_end(else_body_block);
+
+                    if let Some(else_body) = else_body {
+                        for stmt in else_body {
+                            self.compile_statement(stmt)?;
+                        }
+                    }
+
+                    if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                        self.builder
+                            .build_unconditional_branch(end_block)
+                            .unwrap();
+                    }
+                }
+
+                self.builder.position_at_end(end_block);
+
+                Ok(())
+
             }
             Statement::While { condition, body } => {
                 let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
@@ -349,7 +470,7 @@ impl<'ctx> Compiler<'ctx> {
 
     pub fn compile(&mut self, program: Vec<Statement>) -> Result<(), String> {
         for statement in program {
-            self.compile_statement(statement)?;
+            self.compile_statement(&statement)?;
         }
 
         self.module.print_to_stderr();

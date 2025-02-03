@@ -73,6 +73,9 @@ pub enum Token {
     #[token("!")]
     Bang,
 
+    #[token("%")]
+    Percent,
+
     #[token("<")]
     Less,
 
@@ -129,6 +132,12 @@ pub enum Token {
 
     #[token("while")]
     While,
+
+    #[token("if")]
+    If,
+
+    #[token("else")]
+    Else,
 
     #[regex(r"[0-9]+", |lex| lex.slice().parse::<i32>().unwrap())]
     I32Literal(i32),

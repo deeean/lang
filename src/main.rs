@@ -1,5 +1,5 @@
 use logos::Logos;
-use lang::ast::{parser};
+use lang::parser::{parser};
 use lang::lexer::Token;
 use chumsky::Parser;
 use inkwell::context::Context;
@@ -7,9 +7,16 @@ use lang::compiler::Compiler;
 
 fn main() {
     let source = r#"
-fn main() -> i32 {
-    var i: i32 = 0;
+fn fibonacci(n: i32) -> i32 {
+    if (n <= 1) {
+        return n;
+    }
 
+    return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+fn main() -> i32 {
+    printf("%d\n", fibonacci(10));
     return 0;
 }
 "#;
@@ -25,7 +32,7 @@ fn main() -> i32 {
                 tokens.push(token);
             }
             Err(e) => {
-                panic!("{:#?}", e);
+                panic!("{:#?} {:#?}", e, span);
             }
         }
     }
