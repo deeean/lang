@@ -118,6 +118,9 @@ pub enum Token {
     #[token("i64")]
     I64,
 
+    #[token("void")]
+    Void,
+
     #[token("boolean")]
     Boolean,
 

@@ -272,6 +272,7 @@ fn kind_parser() -> impl Parser<Token, Kind, Error = Simple<Token>> {
     choice((
         just(Token::I32).to(Kind::I32),
         just(Token::I64).to(Kind::I64),
+        just(Token::Void).to(Kind::Void),
         just(Token::Boolean).to(Kind::Boolean),
         just(Token::String).to(Kind::String),
     ))

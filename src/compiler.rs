@@ -6,7 +6,7 @@ use inkwell::module::{Linkage, Module};
 use inkwell::{AddressSpace, OptimizationLevel};
 use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
-use inkwell::types::{BasicTypeEnum, BasicType};
+use inkwell::types::{BasicTypeEnum, BasicType, AnyTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, PointerValue};
 use crate::ast::{BinaryOperator, Expression, Literal, Statement, UnaryOperator};
 
@@ -14,7 +14,7 @@ pub struct Compiler<'ctx> {
     context: &'ctx Context,
     module: Module<'ctx>,
     builder: Builder<'ctx>,
-    variables: HashMap<String, (BasicTypeEnum<'ctx>, PointerValue<'ctx>)>,
+    variables: HashMap<String, (AnyTypeEnum<'ctx>, PointerValue<'ctx>)>,
 }
 
 impl<'ctx> Compiler<'ctx> {
@@ -84,17 +84,17 @@ impl<'ctx> Compiler<'ctx> {
         Ok(new_str_ptr.into())
     }
 
-    fn compile_expression(&mut self, expression: &Expression) -> Result<BasicValueEnum<'ctx>, String> {
+    fn compile_expression(&mut self, expression: &Expression) -> Result<Option<BasicValueEnum<'ctx>>, String> {
         match expression {
             Expression::Unary { operator, operand } => {
                 let operand = self.compile_expression(operand)?;
 
                 match operator {
                     UnaryOperator::Negate => {
-                        Ok(self.builder.build_int_neg(operand.into_int_value(), "tmpneg").unwrap().into())
+                        Ok(Some(self.builder.build_int_neg(operand.unwrap().into_int_value(), "tmpneg").unwrap().into()))
                     }
                     UnaryOperator::Not => {
-                        Ok(self.builder.build_not(operand.into_int_value(), "tmpnot").unwrap().into())
+                        Ok(Some(self.builder.build_not(operand.unwrap().into_int_value(), "tmpnot").unwrap().into()))
                     }
                     _ => {
                         Err(format!("Unsupported operator: {:?}", operator))
@@ -107,46 +107,46 @@ impl<'ctx> Compiler<'ctx> {
 
                 match operator {
                     BinaryOperator::Add => {
-                        if lhs.is_int_value() && rhs.is_int_value() {
-                            Ok(self.builder.build_int_add(lhs.into_int_value(), rhs.into_int_value(), "tmpadd").unwrap().into())
-                        } else if lhs.is_pointer_value() && rhs.is_pointer_value() {
-                            self.build_string_concat(lhs, rhs)
+                        if lhs.unwrap().is_int_value() && rhs.unwrap().is_int_value() {
+                            Ok(Some(self.builder.build_int_add(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpadd").unwrap().into()))
+                        } else if lhs.unwrap().is_pointer_value() && rhs.unwrap().is_pointer_value() {
+                            self.build_string_concat(lhs.unwrap(), rhs.unwrap()).map(Some)
                         } else {
                             Err("Unsupported types for addition".to_string())
                         }
                     }
                     BinaryOperator::Subtract => {
-                        Ok(self.builder.build_int_sub(lhs.into_int_value(), rhs.into_int_value(), "tmpsub").unwrap().into())
+                        Ok(Some(self.builder.build_int_sub(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpsub").unwrap().into()))
                     }
                     BinaryOperator::Multiply => {
-                        Ok(self.builder.build_int_mul(lhs.into_int_value(), rhs.into_int_value(), "tmpmul").unwrap().into())
+                        Ok(Some(self.builder.build_int_mul(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpmul").unwrap().into()))
                     }
                     BinaryOperator::Modulo => {
-                        Ok(self.builder.build_int_signed_rem(lhs.into_int_value(), rhs.into_int_value(), "tmpmod").unwrap().into())
+                        Ok(Some(self.builder.build_int_signed_rem(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpmod").unwrap().into()))
                     }
                     BinaryOperator::Divide => {
-                        Ok(self.builder.build_int_signed_div(lhs.into_int_value(), rhs.into_int_value(), "tmpdiv").unwrap().into())
+                        Ok(Some(self.builder.build_int_signed_div(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpdiv").unwrap().into()))
                     }
                     BinaryOperator::Greater => {
-                        Ok(self.builder.build_int_compare(inkwell::IntPredicate::SGT, lhs.into_int_value(), rhs.into_int_value(), "tmpgt").unwrap().into())
+                        Ok(Some(self.builder.build_int_compare(inkwell::IntPredicate::SGT, lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpgt").unwrap().into()))
                     }
                     BinaryOperator::GreaterEqual => {
-                        Ok(self.builder.build_int_compare(inkwell::IntPredicate::SGE, lhs.into_int_value(), rhs.into_int_value(), "tmpge").unwrap().into())
+                        Ok(Some(self.builder.build_int_compare(inkwell::IntPredicate::SGE, lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpge").unwrap().into()))
                     }
                     BinaryOperator::Less => {
-                        Ok(self.builder.build_int_compare(inkwell::IntPredicate::SLT, lhs.into_int_value(), rhs.into_int_value(), "tmplt").unwrap().into())
+                        Ok(Some(self.builder.build_int_compare(inkwell::IntPredicate::SLT, lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmplt").unwrap().into()))
                     }
                     BinaryOperator::LessEqual => {
-                        Ok(self.builder.build_int_compare(inkwell::IntPredicate::SLE, lhs.into_int_value(), rhs.into_int_value(), "tmple").unwrap().into())
+                        Ok(Some(self.builder.build_int_compare(inkwell::IntPredicate::SLE, lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmple").unwrap().into()))
                     }
                     BinaryOperator::Equal => {
-                        Ok(self.builder.build_int_compare(inkwell::IntPredicate::EQ, lhs.into_int_value(), rhs.into_int_value(), "tmpeq").unwrap().into())
+                        Ok(Some(self.builder.build_int_compare(inkwell::IntPredicate::EQ, lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpeq").unwrap().into()))
                     }
                     BinaryOperator::And => {
-                        Ok(self.builder.build_and(lhs.into_int_value(), rhs.into_int_value(), "tmpand").unwrap().into())
+                        Ok(Some(self.builder.build_and(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpand").unwrap().into()))
                     }
                     BinaryOperator::Or => {
-                        Ok(self.builder.build_or(lhs.into_int_value(), rhs.into_int_value(), "tmpor").unwrap().into())
+                        Ok(Some(self.builder.build_or(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpor").unwrap().into()))
                     }
                     _ => {
                         Err(format!("Unsupported operator: {:?}", operator))
@@ -163,7 +163,7 @@ impl<'ctx> Compiler<'ctx> {
                         }
 
                         let argsv: Vec<BasicMetadataValueEnum> =
-                            compiled_args.iter().map(|&val| val.into()).collect();
+                            compiled_args.iter().map(|&val| val.unwrap().into()).collect();
 
                         match self.builder
                             .build_call(function, &argsv, "tmp")
@@ -171,10 +171,10 @@ impl<'ctx> Compiler<'ctx> {
                             .try_as_basic_value()
                             .left() {
                             Some(value) => {
-                                Ok(value)
+                                Ok(Some(value))
                             }
                             None => {
-                                Err("Function call did not return a value".to_string())
+                                Ok(None)
                             }
                         }
 
@@ -187,17 +187,17 @@ impl<'ctx> Compiler<'ctx> {
             Expression::Literal(literal) => {
                 match literal {
                     Literal::I32(value) => {
-                        Ok(self.context.i32_type().const_int(*value as u64, false).into())
+                        Ok(Some(self.context.i32_type().const_int(*value as u64, false).into()))
                     }
                     Literal::I64(value) => {
-                        Ok(self.context.i64_type().const_int(*value as u64, false).into())
+                        Ok(Some(self.context.i64_type().const_int(*value as u64, false).into()))
                     }
                     Literal::Boolean(value) => {
-                        Ok(self.context.bool_type().const_int(*value as u64, false).into())
+                        Ok(Some(self.context.bool_type().const_int(*value as u64, false).into()))
                     }
                     Literal::String(value) => {
                         let string_ptr = self.builder.build_global_string_ptr(&value, "fmt").unwrap();
-                        Ok(string_ptr.as_pointer_value().into())
+                        Ok(Some(string_ptr.as_pointer_value().into()))
                     }
                     _ => {
                         Err("Unsupported literal".to_string())
@@ -206,7 +206,21 @@ impl<'ctx> Compiler<'ctx> {
             }
             Expression::Variable(name) => {
                 if let Some((pointer_type, value)) = self.variables.get(name) {
-                    Ok(self.builder.build_load(*pointer_type, *value, &name).unwrap().into())
+
+                    let basic_type_enum = match pointer_type {
+                        AnyTypeEnum::IntType(int_type) => BasicTypeEnum::IntType(*int_type),
+                        AnyTypeEnum::PointerType(ptr_type) => BasicTypeEnum::PointerType(*ptr_type),
+                        AnyTypeEnum::ArrayType(array_type) => BasicTypeEnum::ArrayType(*array_type),
+                        AnyTypeEnum::StructType(struct_type) => BasicTypeEnum::StructType(*struct_type),
+                        AnyTypeEnum::VectorType(vector_type) => BasicTypeEnum::VectorType(*vector_type),
+                        AnyTypeEnum::FloatType(float_type) => BasicTypeEnum::FloatType(*float_type),
+                        _ => {
+                            return Err("Unsupported type".to_string());
+                        }
+                    };
+
+
+                    Ok(self.builder.build_load(basic_type_enum, *value, &name).unwrap().into())
                 } else {
                     Err(format!("Variable not found: {}", name))
                 }
@@ -218,12 +232,27 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    fn get_value_type_by_kind(&self, kind: &crate::ast::Kind) -> BasicTypeEnum<'ctx> {
+    fn get_value_type_by_kind(&self, kind: &crate::ast::Kind) -> AnyTypeEnum<'ctx> {
         match kind {
+            crate::ast::Kind::Void => self.context.void_type().into(),
             crate::ast::Kind::I32 => self.context.i32_type().into(),
             crate::ast::Kind::I64 => self.context.i64_type().into(),
             crate::ast::Kind::Boolean => self.context.bool_type().into(),
             crate::ast::Kind::String => self.context.ptr_type(AddressSpace::default()).into(),
+        }
+    }
+
+    fn any_value_type_to_basic_type_enum(&self, value_type: AnyTypeEnum<'ctx>) -> BasicTypeEnum<'ctx> {
+        match value_type {
+            AnyTypeEnum::IntType(int_type) => BasicTypeEnum::IntType(int_type),
+            AnyTypeEnum::PointerType(ptr_type) => BasicTypeEnum::PointerType(ptr_type),
+            AnyTypeEnum::ArrayType(array_type) => BasicTypeEnum::ArrayType(array_type),
+            AnyTypeEnum::StructType(struct_type) => BasicTypeEnum::StructType(struct_type),
+            AnyTypeEnum::VectorType(vector_type) => BasicTypeEnum::VectorType(vector_type),
+            AnyTypeEnum::FloatType(float_type) => BasicTypeEnum::FloatType(float_type),
+            _ => {
+                panic!("Unsupported type");
+            }
         }
     }
 
@@ -233,7 +262,7 @@ impl<'ctx> Compiler<'ctx> {
                 name,
                 value,
             } => {
-                let value = self.compile_expression(&value)?;
+                let value = self.compile_expression(&value)?.unwrap();
                 let (_, alloca) = self.variables.get(name).ok_or(format!("Variable not found: {}", name))?;
 
                 self.builder.build_store(*alloca, value).unwrap();
@@ -244,9 +273,11 @@ impl<'ctx> Compiler<'ctx> {
                 let value = self.compile_expression(&value)?;
                 let value_type = self.get_value_type_by_kind(&kind);
 
-                let alloca = self.builder.build_alloca(value_type, &name).unwrap();
+                let basic_type_enum = self.any_value_type_to_basic_type_enum(value_type);
 
-                self.builder.build_store(alloca, value).unwrap();
+                let alloca = self.builder.build_alloca(basic_type_enum, &name).unwrap();
+
+                self.builder.build_store(alloca, value.unwrap()).unwrap();
                 self.variables.insert(name.clone(), (value_type, alloca));
 
                 Ok(())
@@ -296,7 +327,7 @@ impl<'ctx> Compiler<'ctx> {
                     .builder
                     .build_int_compare(
                         inkwell::IntPredicate::NE,
-                        cond_value.into_int_value(),
+                        cond_value.unwrap().into_int_value(),
                         self.context.bool_type().const_zero(),
                         "tmp",
                     )
@@ -316,7 +347,7 @@ impl<'ctx> Compiler<'ctx> {
                 for stmt in body {
                     self.compile_statement(stmt)?;
                 }
-                // Check if the block is already terminated (e.g., by a return)
+
                 if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
                     self.builder
                         .build_unconditional_branch(end_block)
@@ -332,7 +363,7 @@ impl<'ctx> Compiler<'ctx> {
                         .builder
                         .build_int_compare(
                             inkwell::IntPredicate::NE,
-                            cond_value.into_int_value(),
+                            cond_value.unwrap().into_int_value(),
                             self.context.bool_type().const_zero(),
                             "tmp",
                         )
@@ -392,7 +423,7 @@ impl<'ctx> Compiler<'ctx> {
                 self.builder.position_at_end(condition_block);
 
                 let condition_value = self.compile_expression(condition)?;
-                let condition_bool = self.builder.build_int_compare(inkwell::IntPredicate::NE, condition_value.into_int_value(), self.context.bool_type().const_zero(), "tmp").unwrap();
+                let condition_bool = self.builder.build_int_compare(inkwell::IntPredicate::NE, condition_value.unwrap().into_int_value(), self.context.bool_type().const_zero(), "tmp").unwrap();
 
                 self.builder.build_conditional_branch(condition_bool, body_block, end_block).unwrap();
 
@@ -412,13 +443,18 @@ impl<'ctx> Compiler<'ctx> {
                 let params_pointer_types: Vec<_> = parameters
                     .iter()
                     .map(|param| {
-                        self.get_value_type_by_kind(&param.kind).into()
+                        self.any_value_type_to_basic_type_enum(self.get_value_type_by_kind(&param.kind)).into()
                     })
                     .collect();
 
                 let return_pointer_type = self.get_value_type_by_kind(&return_kind);
 
-                let fn_type = return_pointer_type.fn_type(params_pointer_types.as_slice(), false);
+                let fn_type = if return_kind == &crate::ast::Kind::Void {
+                    self.context.void_type().fn_type(&params_pointer_types, false)
+                } else {
+                    let basic_type_enum = self.any_value_type_to_basic_type_enum(return_pointer_type);
+                    basic_type_enum.fn_type(&params_pointer_types, false)
+                };
                 let function = self.module.add_function(&name, fn_type, None);
 
                 let entry_block = self.context.append_basic_block(function, "entry");
@@ -436,7 +472,7 @@ impl<'ctx> Compiler<'ctx> {
                     param_value.set_name(&param.name);
 
                     let alloca = self.builder
-                        .build_alloca(pointer_type, &param.name)
+                        .build_alloca(self.any_value_type_to_basic_type_enum(pointer_type), &param.name)
                         .expect("Failed to build alloca");
 
                     self.builder.build_store(alloca, param_value)
@@ -449,6 +485,12 @@ impl<'ctx> Compiler<'ctx> {
                     self.compile_statement(stmt)?;
                 }
 
+                if return_kind == &crate::ast::Kind::Void {
+                    if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                        self.builder.build_return(None).unwrap();
+                    }
+                }
+
                 self.variables = old_variables;
 
                 Ok(())
@@ -459,7 +501,7 @@ impl<'ctx> Compiler<'ctx> {
             }
             Statement::Return(expression) => {
                 let value = self.compile_expression(expression)?;
-                self.builder.build_return(Some(&value)).unwrap();
+                self.builder.build_return(Some(&value.unwrap())).unwrap();
                 Ok(())
             }
             _ => {

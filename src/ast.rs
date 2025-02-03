@@ -62,10 +62,11 @@ pub enum Literal {
     Boolean(bool),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
     I32,
     I64,
+    Void,
     String,
     Boolean,
 }

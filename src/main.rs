@@ -7,17 +7,15 @@ use lang::compiler::Compiler;
 
 fn main() {
     let source = r#"
-fn fibonacci(n: i32) -> i32 {
-    if (n <= 1) {
-        return n;
-    }
-
-    return fibonacci(n - 1) + fibonacci(n - 2);
+fn say_hello() -> void {
+    printf("Hello, World!\n");
 }
 
-fn main() -> i32 {
-    printf("%d\n", fibonacci(10));
-    return 0;
+fn main() -> void {
+    say_hello();
+    say_hello();
+    say_hello();
+    say_hello();
 }
 "#;
 
