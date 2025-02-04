@@ -25,6 +25,8 @@ pub enum Statement {
         else_ifs: Vec<(Expression, Vec<Statement>)>,
         else_body: Option<Vec<Statement>>,
     },
+    Break,
+    Continue,
     Expression(Expression),
     Return(Expression),
 }
@@ -58,6 +60,7 @@ pub enum Expression {
 pub enum Literal {
     I32(i32),
     I64(i64),
+    F64(f64),
     String(String),
     Boolean(bool),
 }
@@ -66,6 +69,7 @@ pub enum Literal {
 pub enum Kind {
     I32,
     I64,
+    F64,
     Void,
     String,
     Boolean,

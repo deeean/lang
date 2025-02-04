@@ -13,6 +13,7 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
                     Token::False => Expression::Literal(Literal::Boolean(false)),
                     Token::I32Literal(value) => Expression::Literal(Literal::I32(value)),
                     Token::I64Literal(value) => Expression::Literal(Literal::I64(value)),
+                    Token::F64Literal(value) => Expression::Literal(Literal::F64(value.parse().unwrap())),
                     Token::StringLiteral(value) => Expression::Literal(Literal::String(value)),
                 };
 
@@ -254,6 +255,14 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
                 }
             });
 
+        let break_statement = just(Token::Break)
+            .then_ignore(just(Token::Semicolon))
+            .map(|_| Statement::Break);
+
+        let continue_statement = just(Token::Continue)
+            .then_ignore(just(Token::Semicolon))
+            .map(|_| Statement::Continue);
+
         variable_declaration
             .or(function_declaration)
             .or(if_statement)
@@ -261,6 +270,8 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
             .or(return_statement)
             .or(assignment)
             .or(while_statement)
+            .or(break_statement)
+            .or(continue_statement)
     });
 
     statement
@@ -272,6 +283,7 @@ fn kind_parser() -> impl Parser<Token, Kind, Error = Simple<Token>> {
     choice((
         just(Token::I32).to(Kind::I32),
         just(Token::I64).to(Kind::I64),
+        just(Token::F64).to(Kind::F64),
         just(Token::Void).to(Kind::Void),
         just(Token::Boolean).to(Kind::Boolean),
         just(Token::String).to(Kind::String),

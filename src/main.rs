@@ -7,18 +7,27 @@ use lang::compiler::Compiler;
 
 fn main() {
     let source = r#"
-fn say_hello() -> void {
-    printf("Hello, World!\n");
+fn test() -> string {
+    var str: string = "";
+    var i: i32 = 0;
+
+    while (i < 10) {
+        i = i + 1;
+
+        if (i % 2 == 0) {
+            continue;
+        }
+
+        str = str + "! ";
+    }
+
+    return str;
 }
 
 fn main() -> void {
-    say_hello();
-    say_hello();
-    say_hello();
-    say_hello();
+    printf("%s\n", test());
 }
 "#;
-
 
     println!("Source: {}", source);
 

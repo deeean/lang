@@ -4,17 +4,24 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
 use inkwell::{AddressSpace, OptimizationLevel};
+use inkwell::basic_block::BasicBlock;
 use inkwell::passes::PassBuilderOptions;
 use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
 use inkwell::types::{BasicTypeEnum, BasicType, AnyTypeEnum};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, PointerValue};
 use crate::ast::{BinaryOperator, Expression, Literal, Statement, UnaryOperator};
 
+struct LoopStack<'ctx> {
+    condition_block: BasicBlock<'ctx>,
+    end_block: BasicBlock<'ctx>,
+}
+
 pub struct Compiler<'ctx> {
     context: &'ctx Context,
     module: Module<'ctx>,
     builder: Builder<'ctx>,
     variables: HashMap<String, (AnyTypeEnum<'ctx>, PointerValue<'ctx>)>,
+    loop_stack: Vec<LoopStack<'ctx>>,
 }
 
 impl<'ctx> Compiler<'ctx> {
@@ -31,6 +38,7 @@ impl<'ctx> Compiler<'ctx> {
             module,
             builder,
             variables: HashMap::new(),
+            loop_stack: Vec::new(),
         }
     }
 
@@ -109,6 +117,8 @@ impl<'ctx> Compiler<'ctx> {
                     BinaryOperator::Add => {
                         if lhs.unwrap().is_int_value() && rhs.unwrap().is_int_value() {
                             Ok(Some(self.builder.build_int_add(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpadd").unwrap().into()))
+                        } else if lhs.unwrap().is_float_value() && rhs.unwrap().is_float_value() {
+                            Ok(Some(self.builder.build_float_add(lhs.unwrap().into_float_value(), rhs.unwrap().into_float_value(), "tmpadd").unwrap().into()))
                         } else if lhs.unwrap().is_pointer_value() && rhs.unwrap().is_pointer_value() {
                             self.build_string_concat(lhs.unwrap(), rhs.unwrap()).map(Some)
                         } else {
@@ -192,6 +202,9 @@ impl<'ctx> Compiler<'ctx> {
                     Literal::I64(value) => {
                         Ok(Some(self.context.i64_type().const_int(*value as u64, false).into()))
                     }
+                    Literal::F64(value) => {
+                        Ok(Some(self.context.f64_type().const_float(*value as f64).into()))
+                    }
                     Literal::Boolean(value) => {
                         Ok(Some(self.context.bool_type().const_int(*value as u64, false).into()))
                     }
@@ -237,6 +250,7 @@ impl<'ctx> Compiler<'ctx> {
             crate::ast::Kind::Void => self.context.void_type().into(),
             crate::ast::Kind::I32 => self.context.i32_type().into(),
             crate::ast::Kind::I64 => self.context.i64_type().into(),
+            crate::ast::Kind::F64 => self.context.f64_type().into(),
             crate::ast::Kind::Boolean => self.context.bool_type().into(),
             crate::ast::Kind::String => self.context.ptr_type(AddressSpace::default()).into(),
         }
@@ -272,9 +286,7 @@ impl<'ctx> Compiler<'ctx> {
             Statement::VariableDeclaration { name, kind, value } => {
                 let value = self.compile_expression(&value)?;
                 let value_type = self.get_value_type_by_kind(&kind);
-
                 let basic_type_enum = self.any_value_type_to_basic_type_enum(value_type);
-
                 let alloca = self.builder.build_alloca(basic_type_enum, &name).unwrap();
 
                 self.builder.build_store(alloca, value.unwrap()).unwrap();
@@ -418,6 +430,11 @@ impl<'ctx> Compiler<'ctx> {
                 let body_block = self.context.append_basic_block(current_function, "while_body");
                 let end_block = self.context.append_basic_block(current_function, "while_end");
 
+                self.loop_stack.push(LoopStack {
+                    condition_block,
+                    end_block,
+                });
+
                 self.builder.build_unconditional_branch(condition_block).unwrap();
 
                 self.builder.position_at_end(condition_block);
@@ -433,7 +450,11 @@ impl<'ctx> Compiler<'ctx> {
                     self.compile_statement(stmt)?;
                 }
 
-                self.builder.build_unconditional_branch(condition_block).unwrap();
+                if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                    self.builder.build_unconditional_branch(condition_block).unwrap();
+                }
+
+                self.loop_stack.pop();
 
                 self.builder.position_at_end(end_block);
 
@@ -489,11 +510,36 @@ impl<'ctx> Compiler<'ctx> {
                     if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
                         self.builder.build_return(None).unwrap();
                     }
+                } else {
+                    // Non-void 함수인 경우, Terminator가 없으면 unreachable 추가
+                    if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                        self.builder.build_unreachable().unwrap();
+                    }
                 }
 
                 self.variables = old_variables;
 
                 Ok(())
+            }
+            Statement::Break => {
+                if let Some(&ref loop_stack) = self.loop_stack.last() {
+                    if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                        self.builder.build_unconditional_branch(loop_stack.end_block).unwrap();
+                    }
+                    Ok(())
+                } else {
+                    Err("Break statement outside of loop".to_string())
+                }
+            }
+            Statement::Continue => {
+                if let Some(&ref loop_stack) = self.loop_stack.last() {
+                    if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+                        self.builder.build_unconditional_branch(loop_stack.condition_block).unwrap();
+                    }
+                    Ok(())
+                } else {
+                    Err("Continue statement outside of loop".to_string())
+                }
             }
             Statement::Expression(expression) => {
                 self.compile_expression(expression)?;

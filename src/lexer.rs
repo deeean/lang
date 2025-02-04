@@ -118,6 +118,9 @@ pub enum Token {
     #[token("i64")]
     I64,
 
+    #[token("f64")]
+    F64,
+
     #[token("void")]
     Void,
 
@@ -136,6 +139,12 @@ pub enum Token {
     #[token("while")]
     While,
 
+    #[token("break")]
+    Break,
+
+    #[token("continue")]
+    Continue,
+
     #[token("if")]
     If,
 
@@ -147,6 +156,9 @@ pub enum Token {
 
     #[regex(r"[0-9]+i64", |lex| lex.slice()[..lex.slice().len()-3].parse::<i64>().unwrap())]
     I64Literal(i64),
+
+    #[regex(r"[0-9]+\.[0-9]+", |lex| lex.slice().to_owned())]
+    F64Literal(String),
 
     #[regex(r#""([^"\\]|\\.)*""#, |lex| unescape_string(lex.slice()))]
     StringLiteral(String),
