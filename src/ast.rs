@@ -1,8 +1,10 @@
+pub type Program = Vec<Statement>;
+
 #[derive(Debug)]
 pub enum Statement {
     VariableDeclaration {
         name: String,
-        kind: Kind,
+        r#type: Option<Type>,
         value: Expression,
     },
     Assignment {
@@ -12,7 +14,7 @@ pub enum Statement {
     FunctionDeclaration {
         name: String,
         parameters: Vec<Param>,
-        return_kind: Kind,
+        return_type: Type,
         body: Vec<Statement>,
     },
     While {
@@ -34,10 +36,10 @@ pub enum Statement {
 #[derive(Debug)]
 pub struct Param {
     pub name: String,
-    pub kind: Kind,
+    pub r#type: Type,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Binary {
         left: Box<Expression>,
@@ -56,23 +58,33 @@ pub enum Expression {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Literal {
-    I32(i32),
-    I64(i64),
-    F64(f64),
+    Number(Option<Type>, String),
     String(String),
     Boolean(bool),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Kind {
+pub enum Type {
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+    USize,
+    I8,
+    I16,
     I32,
     I64,
+    I128,
+    ISize,
+    F32,
     F64,
     Void,
     String,
     Boolean,
+    Unknown,
 }
 
 #[derive(Clone, Debug)]

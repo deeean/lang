@@ -1,19 +1,18 @@
 use chumsky::error::Simple;
 use chumsky::{select, Parser};
 use chumsky::prelude::{choice, end, just, recursive};
-use crate::ast::{BinaryOperator, Expression, Kind, Param, Statement, UnaryOperator, Literal};
+use crate::ast::{BinaryOperator, Expression, Type, Param, Statement, UnaryOperator, Literal};
 use crate::lexer::Token;
 
 pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
+
     let statement = recursive(|statement| {
         let expression = recursive(|expression| {
             let primary = recursive(|_| {
                 let literal = select! {
                     Token::True => Expression::Literal(Literal::Boolean(true)),
                     Token::False => Expression::Literal(Literal::Boolean(false)),
-                    Token::I32Literal(value) => Expression::Literal(Literal::I32(value)),
-                    Token::I64Literal(value) => Expression::Literal(Literal::I64(value)),
-                    Token::F64Literal(value) => Expression::Literal(Literal::F64(value.parse().unwrap())),
+                    Token::NumberLiteral(value) => Expression::Literal(Literal::Number(None, value)),
                     Token::StringLiteral(value) => Expression::Literal(Literal::String(value)),
                 };
 
@@ -151,17 +150,20 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
 
         let variable_declaration = just(Token::Var)
             .ignore_then(select! { Token::Identifier(name) => name })
-            .then_ignore(just(Token::Colon))
-            .then(kind_parser())
+            .then(
+                just(Token::Colon)
+                    .ignore_then(type_parser())
+                    .or_not()
+            )
             .then_ignore(just(Token::Equal))
             .then(expression.clone())
             .then_ignore(just(Token::Semicolon))
-            .map(|((name, kind), value)| Statement::VariableDeclaration { name, kind, value });
+            .map(|((name, r#type), value)| Statement::VariableDeclaration { name, r#type, value });
 
         let function_parameter = select! { Token::Identifier(name) => name }
             .then_ignore(just(Token::Colon))
-            .then(kind_parser())
-            .map(|(name, kind)| Param { name, kind });
+            .then(type_parser())
+            .map(|(name, kind)| Param { name, r#type: kind });
 
         let function_declaration = just(Token::Fn)
             .ignore_then(select! { Token::Identifier(name) => name })
@@ -171,14 +173,14 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
                     .delimited_by(just(Token::LeftParen), just(Token::RightParen))
             )
             .then_ignore(just(Token::RightArrow))
-            .then(kind_parser())
+            .then(type_parser())
             .then(
                 statement
                     .clone()
                     .repeated()
                     .delimited_by(just(Token::LeftBrace), just(Token::RightBrace))
             )
-            .map(|(((name, parameters), return_kind), body)| Statement::FunctionDeclaration { name, parameters, return_kind, body });
+            .map(|(((name, parameters), return_kind), body)| Statement::FunctionDeclaration { name, parameters, return_type: return_kind, body });
 
         let expr_statement = expression.clone()
             .then_ignore(just(Token::Semicolon))
@@ -199,7 +201,6 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
             .ignore_then(
                 expression
                     .clone()
-                    .delimited_by(just(Token::LeftParen), just(Token::RightParen))
             )
             .then(
                 statement
@@ -214,7 +215,6 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
             .ignore_then(
                 expression
                     .clone()
-                    .delimited_by(just(Token::LeftParen), just(Token::RightParen))
             )
             .then(
                 statement
@@ -236,7 +236,6 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
             .ignore_then(
                 expression
                     .clone()
-                    .delimited_by(just(Token::LeftParen), just(Token::RightParen))
             )
             .then(
                 statement
@@ -279,13 +278,24 @@ pub fn parser() -> impl Parser<Token, Vec<Statement>, Error = Simple<Token>> {
         .then_ignore(end())
 }
 
-fn kind_parser() -> impl Parser<Token, Kind, Error = Simple<Token>> {
+fn type_parser() -> impl Parser<Token, Type, Error = Simple<Token>> {
     choice((
-        just(Token::I32).to(Kind::I32),
-        just(Token::I64).to(Kind::I64),
-        just(Token::F64).to(Kind::F64),
-        just(Token::Void).to(Kind::Void),
-        just(Token::Boolean).to(Kind::Boolean),
-        just(Token::String).to(Kind::String),
+        just(Token::U8).to(Type::U8),
+        just(Token::U16).to(Type::U16),
+        just(Token::U32).to(Type::U32),
+        just(Token::U64).to(Type::U64),
+        just(Token::U128).to(Type::U128),
+        just(Token::USize).to(Type::USize),
+        just(Token::I8).to(Type::I8),
+        just(Token::I16).to(Type::I16),
+        just(Token::I32).to(Type::I32),
+        just(Token::I64).to(Type::I64),
+        just(Token::I128).to(Type::I128),
+        just(Token::ISize).to(Type::ISize),
+        just(Token::F32).to(Type::F32),
+        just(Token::F64).to(Type::F64),
+        just(Token::Void).to(Type::Void),
+        just(Token::Boolean).to(Type::Boolean),
+        just(Token::String).to(Type::String),
     ))
 }

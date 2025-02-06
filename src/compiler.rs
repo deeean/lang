@@ -5,11 +5,12 @@ use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
 use inkwell::{AddressSpace, OptimizationLevel};
 use inkwell::basic_block::BasicBlock;
+use inkwell::execution_engine::ExecutionEngine;
 use inkwell::passes::PassBuilderOptions;
-use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetMachine};
-use inkwell::types::{BasicTypeEnum, BasicType, AnyTypeEnum};
+use inkwell::targets::{CodeModel, InitializationConfig, RelocMode, Target, TargetData, TargetMachine};
+use inkwell::types::{BasicTypeEnum, BasicType, AnyTypeEnum, AnyType};
 use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, FunctionValue, PointerValue};
-use crate::ast::{BinaryOperator, Expression, Literal, Statement, UnaryOperator};
+use crate::ast::{Type, BinaryOperator, Expression, Literal, Statement, UnaryOperator};
 
 struct LoopStack<'ctx> {
     condition_block: BasicBlock<'ctx>,
@@ -22,6 +23,7 @@ pub struct Compiler<'ctx> {
     builder: Builder<'ctx>,
     variables: HashMap<String, (AnyTypeEnum<'ctx>, PointerValue<'ctx>)>,
     loop_stack: Vec<LoopStack<'ctx>>,
+    execution_engine: ExecutionEngine<'ctx>,
 }
 
 impl<'ctx> Compiler<'ctx> {
@@ -33,12 +35,15 @@ impl<'ctx> Compiler<'ctx> {
         let printf_type = context.i32_type().fn_type(&[ptr_i8_type.into()], true);
         module.add_function("printf", printf_type, Some(Linkage::External));
 
+        let execution_engine = module.create_jit_execution_engine(OptimizationLevel::None).unwrap();
+
         Compiler {
             context,
             module,
             builder,
             variables: HashMap::new(),
             loop_stack: Vec::new(),
+            execution_engine,
         }
     }
 
@@ -93,13 +98,20 @@ impl<'ctx> Compiler<'ctx> {
     }
 
     fn compile_expression(&mut self, expression: &Expression) -> Result<Option<BasicValueEnum<'ctx>>, String> {
+
         match expression {
             Expression::Unary { operator, operand } => {
                 let operand = self.compile_expression(operand)?;
 
                 match operator {
                     UnaryOperator::Negate => {
-                        Ok(Some(self.builder.build_int_neg(operand.unwrap().into_int_value(), "tmpneg").unwrap().into()))
+                        if operand.unwrap().is_int_value() {
+                            Ok(Some(self.builder.build_int_neg(operand.unwrap().into_int_value(), "tmpneg").unwrap().into()))
+                        } else if operand.unwrap().is_float_value() {
+                            Ok(Some(self.builder.build_float_neg(operand.unwrap().into_float_value(), "tmpneg").unwrap().into()))
+                        } else {
+                            Err("Unsupported types for negation".to_string())
+                        }
                     }
                     UnaryOperator::Not => {
                         Ok(Some(self.builder.build_not(operand.unwrap().into_int_value(), "tmpnot").unwrap().into()))
@@ -126,31 +138,85 @@ impl<'ctx> Compiler<'ctx> {
                         }
                     }
                     BinaryOperator::Subtract => {
-                        Ok(Some(self.builder.build_int_sub(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpsub").unwrap().into()))
+                        if lhs.unwrap().is_int_value() && rhs.unwrap().is_int_value() {
+                            Ok(Some(self.builder.build_int_sub(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpsub").unwrap().into()))
+                        } else if lhs.unwrap().is_float_value() && rhs.unwrap().is_float_value() {
+                            Ok(Some(self.builder.build_float_sub(lhs.unwrap().into_float_value(), rhs.unwrap().into_float_value(), "tmpsub").unwrap().into()))
+                        } else {
+                            Err("Unsupported types for subtraction".to_string())
+                        }
                     }
                     BinaryOperator::Multiply => {
-                        Ok(Some(self.builder.build_int_mul(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpmul").unwrap().into()))
+                        if lhs.unwrap().is_int_value() && rhs.unwrap().is_int_value() {
+                            Ok(Some(self.builder.build_int_mul(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpmul").unwrap().into()))
+                        } else if lhs.unwrap().is_float_value() && rhs.unwrap().is_float_value() {
+                            Ok(Some(self.builder.build_float_mul(lhs.unwrap().into_float_value(), rhs.unwrap().into_float_value(), "tmpmul").unwrap().into()))
+                        } else {
+                            Err("Unsupported types for multiplication".to_string())
+                        }
                     }
                     BinaryOperator::Modulo => {
-                        Ok(Some(self.builder.build_int_signed_rem(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpmod").unwrap().into()))
+                        if lhs.unwrap().is_int_value() && rhs.unwrap().is_int_value() {
+                            Ok(Some(self.builder.build_int_signed_rem(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpmod").unwrap().into()))
+                        } else if lhs.unwrap().is_float_value() && rhs.unwrap().is_float_value() {
+                            Ok(Some(self.builder.build_float_rem(lhs.unwrap().into_float_value(), rhs.unwrap().into_float_value(), "tmpmod").unwrap().into()))
+                        } else {
+                            Err("Unsupported types for modulo".to_string())
+                        }
                     }
                     BinaryOperator::Divide => {
-                        Ok(Some(self.builder.build_int_signed_div(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpdiv").unwrap().into()))
+                        if lhs.unwrap().is_int_value() && rhs.unwrap().is_int_value() {
+                            Ok(Some(self.builder.build_int_signed_div(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpdiv").unwrap().into()))
+                        } else if lhs.unwrap().is_float_value() && rhs.unwrap().is_float_value() {
+                            Ok(Some(self.builder.build_float_div(lhs.unwrap().into_float_value(), rhs.unwrap().into_float_value(), "tmpdiv").unwrap().into()))
+                        } else {
+                            Err("Unsupported types for division".to_string())
+                        }
                     }
                     BinaryOperator::Greater => {
-                        Ok(Some(self.builder.build_int_compare(inkwell::IntPredicate::SGT, lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpgt").unwrap().into()))
+                        if lhs.unwrap().is_int_value() && rhs.unwrap().is_int_value() {
+                            Ok(Some(self.builder.build_int_compare(inkwell::IntPredicate::SGT, lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpgt").unwrap().into()))
+                        } else if lhs.unwrap().is_float_value() && rhs.unwrap().is_float_value() {
+                            Ok(Some(self.builder.build_float_compare(inkwell::FloatPredicate::OGT, lhs.unwrap().into_float_value(), rhs.unwrap().into_float_value(), "tmpgt").unwrap().into()))
+                        } else {
+                            Err("Unsupported types for greater than".to_string())
+                        }
                     }
                     BinaryOperator::GreaterEqual => {
-                        Ok(Some(self.builder.build_int_compare(inkwell::IntPredicate::SGE, lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpge").unwrap().into()))
+                        if lhs.unwrap().is_int_value() && rhs.unwrap().is_int_value() {
+                            Ok(Some(self.builder.build_int_compare(inkwell::IntPredicate::SGE, lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpge").unwrap().into()))
+                        } else if lhs.unwrap().is_float_value() && rhs.unwrap().is_float_value() {
+                            Ok(Some(self.builder.build_float_compare(inkwell::FloatPredicate::OGE, lhs.unwrap().into_float_value(), rhs.unwrap().into_float_value(), "tmpge").unwrap().into()))
+                        } else {
+                            Err("Unsupported types for greater than or equal".to_string())
+                        }
                     }
                     BinaryOperator::Less => {
-                        Ok(Some(self.builder.build_int_compare(inkwell::IntPredicate::SLT, lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmplt").unwrap().into()))
+                        if lhs.unwrap().is_int_value() && rhs.unwrap().is_int_value() {
+                            Ok(Some(self.builder.build_int_compare(inkwell::IntPredicate::SLT, lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmplt").unwrap().into()))
+                        } else if lhs.unwrap().is_float_value() && rhs.unwrap().is_float_value() {
+                            Ok(Some(self.builder.build_float_compare(inkwell::FloatPredicate::OLT, lhs.unwrap().into_float_value(), rhs.unwrap().into_float_value(), "tmplt").unwrap().into()))
+                        } else {
+                            Err("Unsupported types for less than".to_string())
+                        }
                     }
                     BinaryOperator::LessEqual => {
-                        Ok(Some(self.builder.build_int_compare(inkwell::IntPredicate::SLE, lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmple").unwrap().into()))
+                        if lhs.unwrap().is_int_value() && rhs.unwrap().is_int_value() {
+                            Ok(Some(self.builder.build_int_compare(inkwell::IntPredicate::SLE, lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmple").unwrap().into()))
+                        } else if lhs.unwrap().is_float_value() && rhs.unwrap().is_float_value() {
+                            Ok(Some(self.builder.build_float_compare(inkwell::FloatPredicate::OLE, lhs.unwrap().into_float_value(), rhs.unwrap().into_float_value(), "tmple").unwrap().into()))
+                        } else {
+                            Err("Unsupported types for less than or equal".to_string())
+                        }
                     }
                     BinaryOperator::Equal => {
-                        Ok(Some(self.builder.build_int_compare(inkwell::IntPredicate::EQ, lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpeq").unwrap().into()))
+                        if lhs.unwrap().is_int_value() && rhs.unwrap().is_int_value() {
+                            Ok(Some(self.builder.build_int_compare(inkwell::IntPredicate::EQ, lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpeq").unwrap().into()))
+                        } else if lhs.unwrap().is_float_value() && rhs.unwrap().is_float_value() {
+                            Ok(Some(self.builder.build_float_compare(inkwell::FloatPredicate::OEQ, lhs.unwrap().into_float_value(), rhs.unwrap().into_float_value(), "tmpeq").unwrap().into()))
+                        } else {
+                            Err("Unsupported types for equal".to_string())
+                        }
                     }
                     BinaryOperator::And => {
                         Ok(Some(self.builder.build_and(lhs.unwrap().into_int_value(), rhs.unwrap().into_int_value(), "tmpand").unwrap().into()))
@@ -196,17 +262,61 @@ impl<'ctx> Compiler<'ctx> {
             }
             Expression::Literal(literal) => {
                 match literal {
-                    Literal::I32(value) => {
-                        Ok(Some(self.context.i32_type().const_int(*value as u64, false).into()))
-                    }
-                    Literal::I64(value) => {
-                        Ok(Some(self.context.i64_type().const_int(*value as u64, false).into()))
-                    }
-                    Literal::F64(value) => {
-                        Ok(Some(self.context.f64_type().const_float(*value as f64).into()))
-                    }
                     Literal::Boolean(value) => {
                         Ok(Some(self.context.bool_type().const_int(*value as u64, false).into()))
+                    }
+                    Literal::Number(r#type, value) => {
+                        if let Some(r#type) = r#type {
+                            match r#type {
+                                Type::U8 => {
+                                    Ok(Some(self.context.i8_type().const_int(value.parse().unwrap(), false).into()))
+                                }
+                                Type::U16 => {
+                                    Ok(Some(self.context.i16_type().const_int(value.parse().unwrap(), false).into()))
+                                }
+                                Type::U32 => {
+                                    Ok(Some(self.context.i32_type().const_int(value.parse().unwrap(), false).into()))
+                                }
+                                Type::U64 => {
+                                    Ok(Some(self.context.i64_type().const_int(value.parse().unwrap(), false).into()))
+                                }
+                                Type::U128 => {
+                                    Ok(Some(self.context.i128_type().const_int(value.parse().unwrap(), false).into()))
+                                }
+                                Type::USize => {
+                                    Ok(Some(self.context.ptr_sized_int_type(self.execution_engine.get_target_data(), Some(AddressSpace::default())).const_int(value.parse().unwrap(), false).into()))
+                                }
+                                Type::I8 => {
+                                    Ok(Some(self.context.i8_type().const_int(value.parse().unwrap(), true).into()))
+                                }
+                                Type::I16 => {
+                                    Ok(Some(self.context.i16_type().const_int(value.parse().unwrap(), true).into()))
+                                }
+                                Type::I32 => {
+                                    Ok(Some(self.context.i32_type().const_int(value.parse().unwrap(), true).into()))
+                                }
+                                Type::I64 => {
+                                    Ok(Some(self.context.i64_type().const_int(value.parse().unwrap(), true).into()))
+                                }
+                                Type::I128 => {
+                                    Ok(Some(self.context.i128_type().const_int(value.parse().unwrap(), true).into()))
+                                }
+                                Type::ISize => {
+                                    Ok(Some(self.context.ptr_sized_int_type(self.execution_engine.get_target_data(), Some(AddressSpace::default())).const_int(value.parse().unwrap(), true).into()))
+                                }
+                                Type::F32 => {
+                                    Ok(Some(self.context.f32_type().const_float(value.parse().unwrap()).into()))
+                                }
+                                Type::F64 => {
+                                    Ok(Some(self.context.f64_type().const_float(value.parse().unwrap()).into()))
+                                }
+                                _ => {
+                                    Err("Unsupported number type".to_string())
+                                }
+                            }
+                        } else {
+                            Err("Number type not specified".to_string())
+                        }
                     }
                     Literal::String(value) => {
                         let string_ptr = self.builder.build_global_string_ptr(&value, "fmt").unwrap();
@@ -245,14 +355,28 @@ impl<'ctx> Compiler<'ctx> {
         }
     }
 
-    fn get_value_type_by_kind(&self, kind: &crate::ast::Kind) -> AnyTypeEnum<'ctx> {
-        match kind {
-            crate::ast::Kind::Void => self.context.void_type().into(),
-            crate::ast::Kind::I32 => self.context.i32_type().into(),
-            crate::ast::Kind::I64 => self.context.i64_type().into(),
-            crate::ast::Kind::F64 => self.context.f64_type().into(),
-            crate::ast::Kind::Boolean => self.context.bool_type().into(),
-            crate::ast::Kind::String => self.context.ptr_type(AddressSpace::default()).into(),
+    fn get_value_type_by_type(&self, r#type: &Type) -> AnyTypeEnum<'ctx> {
+        match r#type {
+            Type::U8 => self.context.i8_type().into(),
+            Type::U16 => self.context.i16_type().into(),
+            Type::U32 => self.context.i32_type().into(),
+            Type::U64 => self.context.i64_type().into(),
+            Type::U128 => self.context.i128_type().into(),
+            Type::USize => self.context.ptr_sized_int_type(self.execution_engine.get_target_data(), Some(AddressSpace::default())).into(),
+            Type::I8 => self.context.i8_type().into(),
+            Type::I16 => self.context.i16_type().into(),
+            Type::I32 => self.context.i32_type().into(),
+            Type::I64 => self.context.i64_type().into(),
+            Type::I128 => self.context.i128_type().into(),
+            Type::ISize => self.context.ptr_sized_int_type(self.execution_engine.get_target_data(), Some(AddressSpace::default())).into(),
+            Type::F32 => self.context.f32_type().into(),
+            Type::F64 => self.context.f64_type().into(),
+            Type::Void => self.context.void_type().into(),
+            Type::Boolean => self.context.bool_type().into(),
+            Type::String => self.context.ptr_type(AddressSpace::default()).into(),
+            _ => {
+                panic!("Unsupported type");
+            }
         }
     }
 
@@ -283,12 +407,14 @@ impl<'ctx> Compiler<'ctx> {
 
                 Ok(())
             }
-            Statement::VariableDeclaration { name, kind, value } => {
+            Statement::VariableDeclaration { name, r#type, value } => {
                 let value = self.compile_expression(&value)?;
-                let value_type = self.get_value_type_by_kind(&kind);
+                let value_type = match r#type {
+                    Some(r#type) => self.get_value_type_by_type(&r#type),
+                    None => value.unwrap().get_type().as_any_type_enum(),
+                };
                 let basic_type_enum = self.any_value_type_to_basic_type_enum(value_type);
                 let alloca = self.builder.build_alloca(basic_type_enum, &name).unwrap();
-
                 self.builder.build_store(alloca, value.unwrap()).unwrap();
                 self.variables.insert(name.clone(), (value_type, alloca));
 
@@ -460,17 +586,17 @@ impl<'ctx> Compiler<'ctx> {
 
                 Ok(())
             }
-            Statement::FunctionDeclaration { name, parameters, return_kind, body } => {
+            Statement::FunctionDeclaration { name, parameters, return_type, body } => {
                 let params_pointer_types: Vec<_> = parameters
                     .iter()
                     .map(|param| {
-                        self.any_value_type_to_basic_type_enum(self.get_value_type_by_kind(&param.kind)).into()
+                        self.any_value_type_to_basic_type_enum(self.get_value_type_by_type(&param.r#type)).into()
                     })
                     .collect();
 
-                let return_pointer_type = self.get_value_type_by_kind(&return_kind);
+                let return_pointer_type = self.get_value_type_by_type(&return_type);
 
-                let fn_type = if return_kind == &crate::ast::Kind::Void {
+                let fn_type = if return_type == &crate::ast::Type::Void {
                     self.context.void_type().fn_type(&params_pointer_types, false)
                 } else {
                     let basic_type_enum = self.any_value_type_to_basic_type_enum(return_pointer_type);
@@ -484,7 +610,7 @@ impl<'ctx> Compiler<'ctx> {
                 let old_variables = std::mem::take(&mut self.variables);
 
                 for (i, param) in parameters.into_iter().enumerate() {
-                    let pointer_type = self.get_value_type_by_kind(&param.kind);
+                    let pointer_type = self.get_value_type_by_type(&param.r#type);
 
                     let param_value = function
                         .get_nth_param(i as u32)
@@ -506,12 +632,11 @@ impl<'ctx> Compiler<'ctx> {
                     self.compile_statement(stmt)?;
                 }
 
-                if return_kind == &crate::ast::Kind::Void {
+                if return_type == &crate::ast::Type::Void {
                     if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
                         self.builder.build_return(None).unwrap();
                     }
                 } else {
-                    // Non-void 함수인 경우, Terminator가 없으면 unreachable 추가
                     if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
                         self.builder.build_unreachable().unwrap();
                     }
@@ -563,37 +688,14 @@ impl<'ctx> Compiler<'ctx> {
 
         self.module.print_to_stderr();
 
-        Target::initialize_all(&InitializationConfig::default());
-        let target_triple = TargetMachine::get_default_triple();
-        let target = Target::from_triple(&target_triple).unwrap();
-        let target_machine = target
-            .create_target_machine(
-                &target_triple,
-                "generic",
-                "",
-                OptimizationLevel::None,
-                RelocMode::PIC,
-                CodeModel::Default,
-            ).unwrap();
 
-        let passes: &[&str] = &[
-            "instcombine",
-            "reassociate",
-            "gvn",
-            "simplifycfg",
-            "mem2reg",
-        ];
+        println!("==================== Execution ====================");
 
-        let pass_options = PassBuilderOptions::create();
-        pass_options.set_verify_each(true);
-        pass_options.set_debug_logging(true);
-
-        self
-            .module
-            .run_passes(passes.join(",").as_str(), &target_machine, pass_options)
-            .unwrap();
-
-        target_machine.write_to_file(&self.module, inkwell::targets::FileType::Object, Path::new("./output.o")).unwrap();
+        unsafe {
+            let main_ptr = self.execution_engine.get_function_address("main").unwrap();
+            let main_fn: extern "C" fn() = std::mem::transmute(main_ptr);
+            main_fn();
+        }
 
         Ok(())
     }

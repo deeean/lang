@@ -4,28 +4,20 @@ use lang::lexer::Token;
 use chumsky::Parser;
 use inkwell::context::Context;
 use lang::compiler::Compiler;
+use lang::type_inference::TypeInference;
 
 fn main() {
     let source = r#"
-fn test() -> string {
-    var str: string = "";
-    var i: i32 = 0;
+fn main() -> i32 {
+    var a = 1 == 1;
 
-    while (i < 10) {
-        i = i + 1;
-
-        if (i % 2 == 0) {
-            continue;
-        }
-
-        str = str + "! ";
+    if a {
+        printf("Hello, World!");
+    } else {
+        printf("Hello");
     }
 
-    return str;
-}
-
-fn main() -> void {
-    printf("%s\n", test());
+    return 0;
 }
 "#;
 
@@ -46,12 +38,19 @@ fn main() -> void {
 
     println!("Tokens: {:#?}", tokens);
 
-    let res = match parser().parse(&*tokens) {
+    let mut res = match parser().parse(&*tokens) {
         Ok(res) => res,
         Err(e) => {
             panic!("{:#?}", e);
         }
     };
+
+    println!("Parsed: {:#?}", res);
+
+    let mut type_inference = TypeInference::new();
+    type_inference.type_inference_program(&mut res).unwrap();
+
+    println!("Type inferenced: {:#?}", res);
 
     let ctx = Context::create();
     let mut compiler = Compiler::new(&ctx);

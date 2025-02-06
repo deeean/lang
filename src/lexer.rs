@@ -112,11 +112,44 @@ pub enum Token {
     #[token("return")]
     Return,
 
+    #[token("u8")]
+    U8,
+
+    #[token("u16")]
+    U16,
+
+    #[token("u32")]
+    U32,
+
+    #[token("u64")]
+    U64,
+
+    #[token("u128")]
+    U128,
+
+    #[token("usize")]
+    USize,
+
+    #[token("i8")]
+    I8,
+
+    #[token("i16")]
+    I16,
+
     #[token("i32")]
     I32,
 
     #[token("i64")]
     I64,
+
+    #[token("i128")]
+    I128,
+
+    #[token("isize")]
+    ISize,
+
+    #[token("f32")]
+    F32,
 
     #[token("f64")]
     F64,
@@ -151,20 +184,17 @@ pub enum Token {
     #[token("else")]
     Else,
 
-    #[regex(r"[0-9]+", |lex| lex.slice().parse::<i32>().unwrap())]
-    I32Literal(i32),
-
-    #[regex(r"[0-9]+i64", |lex| lex.slice()[..lex.slice().len()-3].parse::<i64>().unwrap())]
-    I64Literal(i64),
-
-    #[regex(r"[0-9]+\.[0-9]+", |lex| lex.slice().to_owned())]
-    F64Literal(String),
+    #[regex(r"[0-9]+\.?[0-9]*", |lex| lex.slice().to_owned())]
+    NumberLiteral(String),
 
     #[regex(r#""([^"\\]|\\.)*""#, |lex| unescape_string(lex.slice()))]
     StringLiteral(String),
 
     #[regex(r"[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().to_owned())]
     Identifier(String),
+
+    #[regex(r"//.*", logos::skip)]
+    Comment,
 
     #[end]
     Eof,
